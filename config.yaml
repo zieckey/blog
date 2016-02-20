@@ -1,0 +1,52 @@
+title: "编程哥Blog|CodeG"
+languageCode: "zh-CN"
+baseurl: "http://blog.codeg.cn"
+theme: "hugo-rapid-theme"
+copyright: "Copyright (c) 2015. All rights reserved."
+MetaDataFormat: "yaml"
+canonifyurls: true
+builddrafts: false
+PaginatePath: paginator
+pygmentsStyle: "default"
+pygmentsUseClasses: true
+RSSUri: "feed.xml"
+disablePathToLower: true 
+hasCJKLanguage: true
+permalinks:
+  posts: /:year/:month/:day/:slug
+Taxonomies:
+  tag: "tags"
+  category: "categories"
+params:
+  CopyrightHTML: "Copyright &#xA9; 2016. All Rights Reserved."
+  GitHubUser: "zieckey"
+  SidebarRecentLimit: 10
+  DateForm : "2006年01月02日"
+  Tagline: "聪明的解释器"
+  Description: "思路决定出路，态度决定高度。"
+  Keywords: "独立博客,程序员,读书笔记,技术分享"
+  Categories:
+    - 技术文章
+menu:
+  main:
+      - Name: "归档"
+        Pre: "<i class='fa fa-heart'></i>"
+        Weight: -110
+        Identifier: "post"
+        URL: "/post/"
+      - Name: "关于我"
+        Pre: "<i class='fa fa-road'></i>"
+        Identifier: "about"
+        Weight: -100
+        URL: "/about/"
+author:
+  name: "CodeG"
+
+images:
+  - 480x
+  - 768x
+  - 960x
+  - 1024x
+  - 1920x
+  - 720x340
+  - 520x245

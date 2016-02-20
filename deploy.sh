@@ -9,20 +9,23 @@ fi
 # Push Hugo content
 git add -A
 git commit -m "$msg"
-git push origin hugo
+git push origin master
 
 
 # Build the project.
-hugo # if using a theme, replace by `hugo -t <yourtheme>`
+hugo --theme=hugo-rapid-theme
+sleep 1
+git st
 
 # Go To Public folder
 cd public
+git st
 # Add changes to git.
 git add -A
+git st
 
 # Commit changes.
-
-git commit -m "$msg"
+git commit -a -m "$msg"
 
 # Push source and build repos.
 git push origin master

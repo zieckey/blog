@@ -1,13 +1,12 @@
---
+---
 categories:
 - blog
-date: 2016-02-24T20:00:00Z
+date: 2016-02-24T20:43:00Z
 tags:
 - Golang
-- 分布式
 - etcd
+- 分布式
 title: 使用Golang利用ectd实现一个分布式锁
-
 ---
 
 `etcd`是随着`CoreOS`项目一起成长起来的，随着Golang和CoreOS等项目在开源社区日益火热，

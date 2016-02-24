@@ -1,6 +1,6 @@
 ---
 categories:
-- blog
+- opinion
 date: 2016-02-20T22:43:00Z
 title: 将博客从jekyll迁移到hugo
 ---

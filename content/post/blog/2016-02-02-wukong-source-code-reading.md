@@ -155,7 +155,7 @@ func main() {
 			chan rankerRemoveDocRequest,
 			options.RankerBufferLength)
 	}
-```go
+```
 
 与上面类似，从这里可以看出排序器(Rander)有三个功能：将一个文档添加到排序器中、在排序器中进行排序、将一个文档从排序器中移除。每一个`shard`都有独立的`channel`，互不冲突。
 

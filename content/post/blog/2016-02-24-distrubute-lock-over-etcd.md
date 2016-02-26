@@ -39,35 +39,39 @@ title: 使用Golang利用ectd实现一个分布式锁
 package etcdsync
 
 import (
-	"log"
+	"fmt"
+	"io"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/coreos/etcd/client"
 	"github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/context"
-	"fmt"
 )
 
 const (
 	defaultTTL = 60
 	defaultTry = 3
+	deleteAction = "delete"
+	expireAction = "expire"
 )
 
 // A Mutex is a mutual exclusion lock which is distributed across a cluster.
 type Mutex struct {
 	key    string
-	id     string
+	id     string // The identity of the caller
 	client client.Client
 	kapi   client.KeysAPI
-	state  int32
+	ctx    context.Context
+	ttl    time.Duration
 	mutex  *sync.Mutex
+	logger io.Writer
 }
 
 // New creates a Mutex with the given key which must be the same
 // across the cluster nodes.
-// id is the identity of the caller.
 // machines are the ectd cluster addresses
-func New(key string, id string, machines []string) *Mutex {
+func New(key string, ttl int, machines []string) *Mutex {
 	cfg := client.Config{
 		Endpoints:               machines,
 		Transport:               client.DefaultTransport,
@@ -79,12 +83,30 @@ func New(key string, id string, machines []string) *Mutex {
 		return nil
 	}
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil
+	}
+
+	if len(key) == 0 || len(machines) == 0 {
+		return nil
+	}
+
+	if key[0] != '/' {
+		key = "/" + key
+	}
+
+	if ttl < 1 {
+		ttl = defaultTTL
+	}
 
 	return &Mutex{
 		key:    key,
-		id:     id,
+		id:     fmt.Sprintf("%v-%v-%v", hostname, os.Getpid(), time.Now().Format("20060102-15:04:05.999999999")),
 		client: c,
 		kapi:   client.NewKeysAPI(c),
+		ctx: context.TODO(),
+		ttl: time.Second * time.Duration(ttl),
 		mutex:  new(sync.Mutex),
 	}
 }
@@ -95,46 +117,63 @@ func New(key string, id string, machines []string) *Mutex {
 func (m *Mutex) Lock() (err error) {
 	m.mutex.Lock()
 	for try := 1; try <= defaultTry; try++ {
-		debugf("id=%v Try to creating a node : key=%v", m.id, m.key)
-		_, err = m.kapi.Create(context.Background(), m.key, m.id)
-		if err == nil {
-			debugf("id=%v Create node %v OK", m.id, m.key)
+		if m.lock() == nil {
 			return nil
 		}
-		debugf("id=%v create ERROR: %v", m.id, err)
-		if e, ok := err.(client.Error); ok {
-			if e.Code != client.ErrorCodeNodeExist {
-				continue
-			}
-
-			wait:
-			// Get the already node's value.
-			resp, err := m.kapi.Get(context.Background(), m.key, nil)
-			if err != nil {
-				// Always try.
-				try--
-				continue
-			}
-			debugf("id=%v get ok", m.id)
-			ops := &client.WatcherOptions {
-				AfterIndex : resp.Index,
-				Recursive:false,
-			}
-			watcher := m.kapi.Watcher(m.key, ops)
-			for {
-				debugf("id=%v watching ...", m.id)
-				resp, err := watcher.Next(context.Background())
-				if err != nil {
-					goto wait
-				}
-				debugf("id=%v Received an event : %q", m.id, resp)
-				break
-			}
-			debugf("id=%v watch done", m.id)
-			continue // try to creating the lock node again
+		
+		m.debug("Lock node %v ERROR %v", m.key, err)
+		if try < defaultTry {
+			m.debug("Try to lock node %v again", m.key, err)
 		}
 	}
 	return err
+}
+
+func (m *Mutex) lock() (err error) {
+	m.debug("Trying to create a node : key=%v", m.key)
+	setOptions := &client.SetOptions{
+		PrevExist:client.PrevNoExist,
+		TTL:      m.ttl,
+	}
+	resp, err := m.kapi.Set(m.ctx, m.key, m.id, setOptions)
+	if err == nil {
+		m.debug("Create node %v OK [%q]", m.key, resp)
+		return nil
+	}
+	m.debug("Create node %v failed [%v]", m.key, err)
+	e, ok := err.(client.Error)
+	if !ok {
+		return err
+	}
+
+	if e.Code != client.ErrorCodeNodeExist {
+		return err
+	}
+
+	// Get the already node's value.
+	resp, err = m.kapi.Get(m.ctx, m.key, nil)
+	if err != nil {
+		return err
+	}
+	m.debug("Get node %v OK", m.key)
+	watcherOptions := &client.WatcherOptions{
+		AfterIndex : resp.Index,
+		Recursive:false,
+	}
+	watcher := m.kapi.Watcher(m.key, watcherOptions)
+	for {
+		m.debug("Watching %v ...", m.key)
+		resp, err = watcher.Next(m.ctx)
+		if err != nil {
+			return err
+		}
+
+		m.debug("Received an event : %q", resp)
+		if resp.Action == deleteAction || resp.Action == expireAction {
+			return nil
+		}
+	}
+
 }
 
 // Unlock unlocks m.
@@ -147,29 +186,32 @@ func (m *Mutex) Unlock() (err error) {
 	defer m.mutex.Unlock()
 	for i := 1; i <= defaultTry; i++ {
 		var resp *client.Response
-		resp, err = m.kapi.Delete(context.Background(), m.key, nil)
-		debugf("id=%v Delete %q", m.id, resp)
-		if err != nil {
-			if _, ok := err.(client.Error); !ok {
-				// retry.
-				continue
-			}
+		resp, err = m.kapi.Delete(m.ctx, m.key, nil)
+		if err == nil {
+			m.debug("Delete %v OK", m.key)
+			return nil
 		}
-		break
+		m.debug("Delete %v falied: %q", m.key, resp)
+		e, ok := err.(client.Error)
+		if ok && e.Code == client.ErrorCodeKeyNotFound {
+			return nil
+		}
 	}
-	return
+	return err
 }
 
-var debug = false
-func debugf(format string, v ...interface{}) {
-	if debug {
-		log.Output(2, fmt.Sprintf(format, v...))
+func (m *Mutex) debug(format string, v ...interface{}) {
+	if m.logger != nil {
+		m.logger.Write([]byte(m.id))
+		m.logger.Write([]byte(" "))
+		m.logger.Write([]byte(fmt.Sprintf(format, v...)))
+		m.logger.Write([]byte("\n"))
 	}
 }
-func SetDebug(flag bool) {
-	debug = flag
-}
 
+func (m *Mutex) SetDebugLogger(w io.Writer) {
+	m.logger = w
+}
 ```
 
 
@@ -180,7 +222,7 @@ func SetDebug(flag bool) {
 package main
 
 import (
-	"github.com/zieckey/go-etcd-lock"
+	"github.com/zieckey/etcdsync"
 	"log"
 )
 
@@ -212,7 +254,7 @@ func main() {
 
 ## 参考
 
-1. [go-etcd-lock项目地址](https://github.com/zieckey/go-etcd-lock)
+1. [etcdsync项目地址](https://github.com/zieckey/etcdsync)
 2. [ectd项目官方地址](https://github.com/coreos/etcd)
 
 

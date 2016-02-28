@@ -1,4 +1,4 @@
-title: "编程哥Blog|CodeG"
+title: "CodeG Blog"
 languageCode: "zh-CN"
 baseurl: "http://blog.codeg.cn"
 theme: "hugo-rapid-theme"
@@ -26,9 +26,13 @@ params:
   Description: "思路决定出路，态度决定高度。"
   Keywords: "独立博客,程序员,读书笔记,技术分享"
   Categories:
-    - 技术文章
 menu:
   main:
+      - Name: "技术文章"
+        Pre: "<i class='fa fa-heart'></i>"
+        Weight: -110
+        Identifier: "post"
+        URL: "/post/"
       - Name: "归档"
         Pre: "<i class='fa fa-heart'></i>"
         Weight: -110

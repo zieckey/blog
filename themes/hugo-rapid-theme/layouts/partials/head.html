@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html class="no-js">
 <head>
-  <base href="{{ .Site.BaseURL }}/">
-  <script>
+    <base href="{{ .Site.BaseURL }}/">
+    <script>
     document._writeOriginal = document.write;
     document.write = function(str) {
         if (str.indexOf('livereload.js') > -1) {
@@ -11,16 +11,17 @@
             document._writeOriginal('<!-- Be Hijack!! -->');
         }
     }
-  </script>
-  {{ partial "head.meta.html" . }}
-  <script>document.documentElement.className = document.documentElement.className.replace("no-js", "js");</script>
-  <link rel="canonical" href="{{ .Permalink}}">
-  <link rel='shortlink' href="{{ .Permalink}}"/>
-  <link rel="shortcut icon" href="{{ .Site.BaseURL }}/public/favicon.ico"/>
-  {{ partial "head.includes.html" . }}
 
-  <!-- baidu stat : http://tongji.baidu.com/ -->
-  <script>
+    </script>
+    {{ partial "head.meta.html" . }}
+    <script>document.documentElement.className = document.documentElement.className.replace("no-js", "js");</script>
+    <link rel="canonical" href="{{ .Permalink}}">
+    <link rel='shortlink' href="{{ .Permalink}}"/>
+    <link rel="shortcut icon" href="{{ .Site.BaseURL }}/public/favicon.ico"/>
+    {{ partial "head.includes.html" . }}
+
+    <!-- baidu stat : http://tongji.baidu.com/ -->
+    <script>
     var _hmt = _hmt || [];
     (function() {
       var hm = document.createElement("script");
@@ -30,9 +31,7 @@
     })();
     </script>
 
-  <!-- cnzz stat : http://tongji.cnzz.com/main.php?c=site&a=show&from=login# -->
-  <script type="text/javascript">var cnzz_protocol = (("https:" == document.location.protocol) ? " https://" : " http://");document.write(unescape("%3Cspan id='cnzz_stat_icon_1253999623'%3E%3C/span%3E%3Cscript src='" + cnzz_protocol + "s4.cnzz.com/z_stat.php%3Fid%3D1253999623' type='text/javascript'%3E%3C/script%3E"));</script>
 
-
-
+    <!-- cnzz stat : http://tongji.cnzz.com/main.php?c=site&a=show&from=login# -->
+    <script src="http://s4.cnzz.com/z_stat.php?id=1253999623&web_id=1253999623" language="JavaScript"></script>
 </head>

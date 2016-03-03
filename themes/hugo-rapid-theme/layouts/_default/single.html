@@ -27,16 +27,13 @@
                   <h1 class="post-title">{{ .Title }}</h1>
 
                   <p class="post-byline">
-                    by {{ .GetParam "author" }} · {{ .Date.Format .Site.Params.DateForm }} · {{ .WordCount }} Words ·
+                    By {{ .GetParam "author" }} · {{ .Date.Format .Site.Params.DateForm }} · {{ .WordCount }} Words ·
                     ~{{ .ReadingTime }}min reading time |
-                    <a href="https://github.com/zieckey/blog/blob/master/content/{{ replace .Source.File.Path "\\" "/" }}"
-                       target="_blank">Improve on <i class="fa fa-github"></i></a>
+                    <a href="https://github.com/zieckey/blog/edit/master/content/{{ replace .Source.File.Path "\\" "/" }}"
+                       target="_blank">编辑这个页面</a>
                   </p>
 
-
-
                   <div class="clear"></div>
-
 
                   <div class="entry">
 

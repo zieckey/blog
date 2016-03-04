@@ -241,12 +241,12 @@ a,
 }
 
 .post-byline a {
-    text-decoration: underline;
+    text-decoration: none;
 }
 
 .post-byline a:hover {
     color: #d36430;
-    text-decoration: none;
+    text-decoration: underline;
 }
 
 .entry ul.ghStarred li {

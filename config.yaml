@@ -19,6 +19,7 @@ Taxonomies:
   category: "categories"
 params:
   CopyrightHTML: "Copyright &#xA9; 2016. All Rights Reserved."
+  AuthorName: "CodeG"
   GitHubUser: "zieckey"
   SidebarRecentLimit: 10
   DateForm : "2006年01月02日"

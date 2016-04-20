@@ -5,7 +5,7 @@ date: 2016-02-20T22:43:00Z
 title: 将博客从jekyll迁移到hugo
 ---
 
-之前的博客内容都是用`jekyll`来渲染的，这是用ruby写，部署起来比较麻烦。最近看到Golang开发的`hugo`工具，真是眼前一亮啊。
+之前的博客内容都是用`jekyll`来渲染的，这是用ruby写，部署起来比较麻烦。最近看到Golang开发的 [hugo](https://gohugo.io/) 工具，真是眼前一亮啊。
 
 促使我做这种迁移的动机有一下几点：
 

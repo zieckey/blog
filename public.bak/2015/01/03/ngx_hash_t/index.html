@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <base href="http://blog.codeg.cn/">
+    <script>
+    document._writeOriginal = document.write;
+    document.write = function(str) {
+        if (str.indexOf('livereload.js') > -1) {
+            document._writeOriginal(str);
+        } else {
+            document._writeOriginal('<!-- Be Hijack!! -->');
+        }
+    }
+
+    </script>
+    <title>Nginx源码研究（4）——hash结构ngx_hash_t - CodeG Blog</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+<meta name="description" content="本文主要介绍Nginx数组ngx_hash_t这一重要的数据结构的使用方法和具体实现。nginx实现的hash表特点是构建一次, 初始化后无法动态的增删，之后就只用于&lt;k,v&gt;查找。">
+<meta name="author" content="zieckey">
+<meta name="publisher" content="zieckey">
+<meta name="generator" content="http://gohugo.io/"/>
+
+<meta itemprop="name" content="Nginx源码研究（4）——hash结构ngx_hash_t - CodeG Blog">
+<meta itemprop="description" content="本文主要介绍Nginx数组ngx_hash_t这一重要的数据结构的使用方法和具体实现。nginx实现的hash表特点是构建一次, 初始化后无法动态的增删，之后就只用于&lt;k,v&gt;查找。">
+<meta itemprop="image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+<meta property="og:title" content="Nginx源码研究（4）——hash结构ngx_hash_t - CodeG Blog" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://blog.codeg.cn/2015/01/03/ngx_hash_t/" />
+<meta property="og:image" content="http://blog.codeg.cn/public/codeg.jpg" />
+<meta property="og:description" content="本文主要介绍Nginx数组ngx_hash_t这一重要的数据结构的使用方法和具体实现。nginx实现的hash表特点是构建一次, 初始化后无法动态的增删，之后就只用于&lt;k,v&gt;查找。">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@zieckey">
+<meta name="twitter:title" content="Nginx源码研究（4）——hash结构ngx_hash_t - CodeG Blog">
+<meta name="twitter:description" content="本文主要介绍Nginx数组ngx_hash_t这一重要的数据结构的使用方法和具体实现。nginx实现的hash表特点是构建一次, 初始化后无法动态的增删，之后就只用于&lt;k,v&gt;查找。">
+<meta name="twitter:creator" content="@zieckey">
+<meta name="twitter:image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+    <script>document.documentElement.className = document.documentElement.className.replace("no-js", "js");</script>
+    <link rel="canonical" href="http://blog.codeg.cn/2015/01/03/ngx_hash_t/">
+    <link rel='shortlink' href="http://blog.codeg.cn/2015/01/03/ngx_hash_t/"/>
+    <link rel="shortcut icon" href="http://blog.codeg.cn/public/favicon.ico"/>
+    
+<link rel="stylesheet" id="human-style-css" href="http://blog.codeg.cn/wp-content/themes/hueman/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="human-style-css2" href="http://blog.codeg.cn/wp-content/themes/hueman-child/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="responsive-css" href="http://blog.codeg.cn/wp-content/themes/hueman/responsive.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="font-awesome-css" href="http://blog.codeg.cn/wp-content/themes/hueman/fonts/font-awesome.min.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="http://blog.codeg.cn/public/highlight/styles/github.css">
+<script src="http://blog.codeg.cn/public/highlight/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<link rel="stylesheet" id="human-style-css3" href="http://blog.codeg.cn/wp-content/themes/hueman-child/user.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="public/font/hack/css/hack.min.css">
+
+<script type="text/javascript" src="assets/js/jquery-2.1.1.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/jquery.jplayer.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/scripts.js"></script>
+<script type="text/javascript" src="assets/picturefill/picturefill.min.js"></script>
+<script type="text/javascript" src="assets/js/jquery.matchHeight-min.js"></script>
+<script type="text/javascript" async defer src="assets/js/myblog.js"></script>
+
+
+    
+    <script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?16a8034e97e7943d9bd7f7310a59a7d8";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+
+
+    
+    <script src="http://s4.cnzz.com/z_stat.php?id=1253999623&web_id=1253999623" language="JavaScript"></script>
+</head>
+
+<body class="single single-post single-format-standard col-3cm full-width topbar-enabled chrome">
+<div id="wrapper">
+  <header id="header">
+
+  <nav class="nav-container group" id="nav-topbar">
+    <div class="nav-toggle"><i class="fa fa-bars"></i></div>
+    <div class="nav-text"></div>
+    <div class="nav-wrap container">
+      <a rel="nofollow" href="http://blog.codeg.cn/" class="nav-cs-icon">
+        <img width="40" height="40" src="http://blog.codeg.cn/public/codeg.jpg" alt="codeg" title="Home">
+      </a>
+      <ul id="menu-default-menu" class="nav container-inner group">
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/">首页</a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/post/">技术文章</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/about/">关于我</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/feed.xml" type="application/rss+xml" target="_blank">订阅</a>
+        </li>
+        <li class="menu-item menu-item-type-post_type menu-item-text">
+        聪明的解释器
+        </li>
+      </ul>
+    </div>
+
+    <div class="container">
+      <div class="container-inner">
+        <div class="toggle-search"><i class="fa fa-search"></i></div>
+        <div class="search-expand">
+          <div class="search-expand-inner">
+            <form method="get" class="searchform themeform" action="https://www.so.com/s">
+              <div>
+                <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+
+  </nav>
+  
+
+  <div class="container group">
+    <div class="container-inner">
+
+      <div class="group pad">
+
+        <div class="group pad">
+          <h1 class="site-title">
+            <a rel="nofollow" href="http://blog.codeg.cn/" rel="home">
+              <img style="border-radius: 50%;width:72px;height:72px;margin:0 auto;" alt="codeg" src="http://blog.codeg.cn/public/codeg.jpg"></img>
+              CodeG Blog
+            </a>
+          </h1>
+          <p class="site-description"> 思路决定出路，态度决定高度。 </p>
+        </div>
+
+      </div>
+    </div>
+    
+  </div>
+  
+
+</header>
+
+
+
+  <div class="container" id="page">
+    <div class="container-inner">
+      <div class="main">
+        <div class="main-inner group">
+          <section class="content">
+            <div class="page-title pad group">
+              <ul class="meta-single group">
+                
+                <li class="category">
+                  <a href="http://blog.codeg.cn/categories/blog/" rel="category tag">blog</a>
+                </li>
+                
+              </ul>
+            </div>
+
+            <div class="pad group">
+
+              <article
+                  class="post type-post status-publish format-standard has-post-thumbnail hentry category-australien tag-bondi-beach tag-city2surf tag-sydney">
+                <div class="post-inner group">
+
+                  <h1 class="post-title">Nginx源码研究（4）——hash结构ngx_hash_t</h1>
+
+                  <p class="post-byline">
+                    By <a target="_blank" href="http://blog.codeg.cn/">CodeG</a> · 2015年01月03日 · 3739 Words ·
+                    ~8min reading time |
+                    <a href="https://github.com/zieckey/blog/edit/master/content/post/blog/2015-01-03-ngx_hash_t.md"
+                       target="_blank">编辑这个页面</a>
+                    | Tags:
+                    
+                    <a rel="tag" href="http://blog.codeg.cn/tags/nginx">Nginx</a>
+                    
+                    <a rel="tag" href="http://blog.codeg.cn/tags/%e7%bd%91%e7%bb%9c%e7%bc%96%e7%a8%8b">网络编程</a>
+                    
+                  </p>
+
+                  <div class="clear"></div>
+
+                  <div class="entry">
+
+                    <div style="border: 1px dashed #e0e0e0; padding: 10px 10px 10px 10px; background-color: #fffeee; background-repeat: no-repeat; background-attachment: scroll; background-position: 1% 50%; -moz-background-size: auto auto; -moz-background-clip: -moz-initial; -moz-background-origin: -moz-initial; -moz-background-inline-policy: -moz-initial;">
+                      
+                      
+                      
+                      
+                      <div>
+                        
+                        
+                        
+                        
+                        本文 <a target="_blank" href="http://blog.codeg.cn/2015/01/03/ngx_hash_t/">http://blog.codeg.cn/2015/01/03/ngx_hash_t/</a> 是作者<a target="_blank" href="http://blog.codeg.cn/">CodeG</a>在研究和学习相关内容时所做的笔记，欢迎广大朋友指正和交流！
+                        版权所有，欢迎转载和分享，但请保留此段声明。 </p>
+                      </div>
+
+                    </div>
+
+                    <div class="entry-inner">
+                      
+
+<h2 id="简介:31936ad00b1d63154f84a804c2cf2573">简介</h2>
+
+<p>本文主要介绍Nginx的hash结构<code>ngx_hash_t</code>这一重要的数据结构的使用方法和具体实现。nginx实现的hash表特点是构建一次, 初始化后无法动态的增删，之后就只用于<k,v>查找。之所以这么设计是为了使用最少的内存同时得到最快的查找速度。</p>
+
+<h2 id="冲突解决:31936ad00b1d63154f84a804c2cf2573">冲突解决</h2>
+
+<p>Nginx的<code>ngx_hash_t</code>采用开放地址法来解决冲突问题，即：插入的时候发现自己的位置f(key)已经被占了，就向后遍历，查看f(key)+1的位置是否被占用，如果没被占用，就占用它，否则继续相后，查询的时候，同样也如果f(key)不是需要的值，也依次向后遍历，一直找到需要的元素。</p>
+
+<h2 id="源代码位置:31936ad00b1d63154f84a804c2cf2573">源代码位置</h2>
+
+<p>src/core/ngx_hash.{h,c}</p>
+
+<h2 id="数据结构:31936ad00b1d63154f84a804c2cf2573">数据结构</h2>
+
+<pre><code class="language-c">//hash结构
+typedef struct {
+    ngx_hash_elt_t  **buckets; //hash桶(有size个桶)
+    ngx_uint_t        size;    //hash桶个数
+} ngx_hash_t;
+
+
+// &lt;key,value&gt; 结构，初始化时候使用
+typedef struct {
+    ngx_str_t         key;      //key，为nginx的字符串结构
+    ngx_uint_t        key_hash; //由该key计算出的hash值(通过hash函数如ngx_hash_key_lc())
+    void             *value;    //该key对应的值，组成一个键-值对&lt;key,value&gt;
+} ngx_hash_key_t;
+
+//hash元素结构
+typedef struct {
+    void             *value;    //value，即某个key对应的值，即&lt;key,value&gt;中的value
+    u_short           len;      //name长度
+    u_char            name[1];  //某个要hash的数据(在nginx中表现为字符串)，即&lt;key,value&gt;中的key
+    // 这里数组长度为1，是一个小技巧。实现时，在具体分配ngx_hash_elt_t的大小时使用宏NGX_HASH_ELT_SIZE来确定(并且是内存对齐的)：
+    // #define NGX_HASH_ELT_SIZE(name) (sizeof(void *) + ngx_align((name)-&gt;key.len + 2, sizeof(void *)))
+} ngx_hash_elt_t;
+
+//hash初始化结构，用来将其相关数据封装起来作为参数传递给ngx_hash_init()或ngx_hash_wildcard_init()函数
+typedef struct {
+    ngx_hash_t       *hash;         //指向待初始化的hash结构。
+    ngx_hash_key_pt   key;          //hash函数指针
+
+    // 散列表中槽的最大数目
+    ngx_uint_t        max_size;     //bucket的最大个数
+
+    // 散列表中一个槽的空间大小，它限制了每个散列表元素关键字的最大长度，通过NGX_HASH_ELT_SIZE(name)计算每个element的大小。
+    // 如果这个bucket_size设置较大，那么他就能够容纳多个element，这样一个bucket里存放多个element，进而导致查找速度下降。
+    // 为了更好的查找速度，请将bucket_size设置为所有element长度最大的那个。
+    ngx_uint_t        bucket_size;
+
+    // 散列表的名称
+    char             *name;         //该hash结构的名字(仅在错误日志中使用)
+    // 内存池，它分配散列表（最多3个，包括1个普通散列表，1个前置通配符散列表，1个后置通配符散列表）中的所有槽
+    ngx_pool_t       *pool;         //该hash结构从pool指向的内存池中分配
+    // 临时内存池，它仅存在于初始化散列表之前。它主要用于分配一些临时的动态数组，带通配符的元素在初始化时需要用到这些数组。
+    ngx_pool_t       *temp_pool;    //分配临时数据空间的内存池
+} ngx_hash_init_t;
+
+</code></pre>
+
+<h2 id="内存结构图:31936ad00b1d63154f84a804c2cf2573">内存结构图</h2>
+
+<p><a href="http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-2.png"><img src="http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-2.png" alt="" /></a>
+备注：从参考文档7摘录</p>
+
+<p><a href="http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-1.png"><img src="http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-1.png" alt="" /></a>
+备注：从参考博客6摘录</p>
+
+<h2 id="初始化函数:31936ad00b1d63154f84a804c2cf2573">初始化函数</h2>
+
+<p>直接上增加了注释的代码，这个需要结合上面两个图片来看。</p>
+
+<pre><code class="language-c">
+// 第一个参数hinit是初始化的一些参数的一个集合。 names是初始化一个ngx_hash_t所需要的所有&lt;key,value&gt;对的一个数组，而nelts是该数组的个数。
+// 备注：我倒是觉得可以直接使用一个ngx_array_t*作为参数呢？
+//
+//初始化步骤
+//1. 遍历待初始化的ngx_hash_key_t数组, 保证占用空间最大的ngx_hash_elt_t元素可以装进bucket_size大小空间
+//2. 预估一个可以装入所有元素的hash表长度start, 判断是否可以将所有元素装进这个size大小的hash表
+//3. 装不下, 增加size, 如果size达到max_size仍然不能创建这个hash表, 则失败. 否则确定了要构建的hash表长度(buckets个数)
+//4. found:处开始,, 计算所有元素占用总空间, 为hash表的各个bucket分配各自的空间
+//5. 将ngx_hash_key_t数组元素分别放入对应的bucket中
+//
+//其中第2步中怎么计算初始的可能hash表的大小start?
+//start = nelts / (bucket_size / (2 * sizeof(void *)));
+//也即认为一个bucket最多放入的元素个数为bucket_size / (2 * sizeof(void *));
+//64位机器上, sizeof(void *) 为8 Bytes,  sizeof(unsigned short)为2Bytes, sizeof(name)为1 Byte, sizeof(ngx_hash_elt_t)为16Bytes, 正好与2 * sizeof(void *)相等.
+ngx_int_t
+ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
+{
+    u_char          *elts;
+    size_t           len;
+    u_short         *test;
+    ngx_uint_t       i, n, key, size, start, bucket_size;
+    ngx_hash_elt_t  *elt, **buckets;
+
+    //检查names数组的每一个元素，判断桶的大小是否够存放key
+    for (n = 0; n &lt; nelts; n++) {
+        if (hinit-&gt;bucket_size &lt; NGX_HASH_ELT_SIZE(&amp;names[n]) + sizeof(void *))
+        {
+        	//有任何一个元素，桶的大小不够为该元素分配空间，则退出
+            ngx_log_error(NGX_LOG_EMERG, hinit-&gt;pool-&gt;log, 0,
+                          &quot;could not build the %s, you should &quot;
+                          &quot;increase %s_bucket_size: %i&quot;,
+                          hinit-&gt;name, hinit-&gt;name, hinit-&gt;bucket_size);
+            return NGX_ERROR;
+        }
+    }
+
+    //分配 sizeof(u_short)*max_size 个字节的空间保存hash数据
+    //(该内存分配操作不在nginx的内存池中进行，因为test只是临时的)
+    test = ngx_alloc(hinit-&gt;max_size * sizeof(u_short), hinit-&gt;pool-&gt;log);
+    if (test == NULL) {
+        return NGX_ERROR;
+    }
+
+    bucket_size = hinit-&gt;bucket_size - sizeof(void *);
+
+    start = nelts / (bucket_size / (2 * sizeof(void *)));
+    start = start ? start : 1;
+
+    if (hinit-&gt;max_size &gt; 10000 &amp;&amp; nelts &amp;&amp; hinit-&gt;max_size / nelts &lt; 100) {
+        start = hinit-&gt;max_size - 1000;
+    }
+
+    for (size = start; size &lt; hinit-&gt;max_size; size++) {
+
+        ngx_memzero(test, size * sizeof(u_short));
+        //标记1：此块代码是检查bucket大小是否够分配hash数据
+        for (n = 0; n &lt; nelts; n++) {
+            if (names[n].key.data == NULL) {
+                continue;
+            }
+
+            //计算key和names中所有name长度，并保存在test[key]中
+            key = names[n].key_hash % size; //若size=1，则key一直为0
+            test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&amp;names[n]));
+
+#if 0
+            ngx_log_error(NGX_LOG_ALERT, hinit-&gt;pool-&gt;log, 0,
+                          &quot;%ui: %ui %ui \&quot;%V\&quot;&quot;,
+                          size, key, test[key], &amp;names[n].key);
+#endif
+
+            //若超过了桶的大小，则到下一个桶重新计算
+            if (test[key] &gt; (u_short) bucket_size) {
+                goto next;
+            }
+        }
+
+        goto found;
+
+    next:
+
+        continue;
+    }
+
+    //若没有找到合适的bucket，退出
+    ngx_log_error(NGX_LOG_EMERG, hinit-&gt;pool-&gt;log, 0,
+                  &quot;could not build the %s, you should increase &quot;
+                  &quot;either %s_max_size: %i or %s_bucket_size: %i&quot;,
+                  hinit-&gt;name, hinit-&gt;name, hinit-&gt;max_size,
+                  hinit-&gt;name, hinit-&gt;bucket_size);
+
+    ngx_free(test);
+
+    return NGX_ERROR;
+
+found: //找到合适的bucket
+
+	//将test数组前size个元素初始化为sizeof(void *)
+    for (i = 0; i &lt; size; i++) {
+        test[i] = sizeof(void *);
+    }
+
+    /** 标记2：与标记1代码基本相同，但此块代码是再次计算所有hash数据的总长度(标记1的检查已通过)
+        但此处的test[i]已被初始化为sizeof(void *)，即相当于后续的计算再加上一个void指针的大小。
+     */
+    for (n = 0; n &lt; nelts; n++) {
+        if (names[n].key.data == NULL) {
+            continue;
+        }
+
+        //计算key和names中所有name长度，并保存在test[key]中
+        key = names[n].key_hash % size;//若size=1，则key一直为0
+        test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&amp;names[n]));
+    }
+
+    //计算hash数据的总长度
+    len = 0;
+
+    for (i = 0; i &lt; size; i++) {
+        if (test[i] == sizeof(void *)) {
+        	//若test[i]仍为初始化的值为sizeof(void *)，即没有变化，则继续
+            continue;
+        }
+
+        //对test[i]按ngx_cacheline_size对齐(32位平台，ngx_cacheline_size=32)
+        test[i] = (u_short) (ngx_align(test[i], ngx_cacheline_size));
+
+        len += test[i];
+    }
+
+    if (hinit-&gt;hash == NULL) {
+    	//在内存池中分配hash头及buckets数组(size个ngx_hash_elt_t*结构)
+        hinit-&gt;hash = ngx_pcalloc(hinit-&gt;pool, sizeof(ngx_hash_wildcard_t)
+                                             + size * sizeof(ngx_hash_elt_t *));
+        if (hinit-&gt;hash == NULL) {
+            ngx_free(test);
+            return NGX_ERROR;
+        }
+
+        //计算buckets的启示位置(在ngx_hash_wildcard_t结构之后)
+        buckets = (ngx_hash_elt_t **)
+                      ((u_char *) hinit-&gt;hash + sizeof(ngx_hash_wildcard_t));
+
+    } else {
+    	//在内存池中分配buckets数组(size个ngx_hash_elt_t*结构)
+        buckets = ngx_pcalloc(hinit-&gt;pool, size * sizeof(ngx_hash_elt_t *));
+        if (buckets == NULL) {
+            ngx_free(test);
+            return NGX_ERROR;
+        }
+    }
+
+    //接着分配elts，大小为len+ngx_cacheline_size，此处为什么+ngx_cacheline_size？——下面要按ngx_cacheline_size字节对齐
+    elts = ngx_palloc(hinit-&gt;pool, len + ngx_cacheline_size);
+    if (elts == NULL) {
+        ngx_free(test);
+        return NGX_ERROR;
+    }
+
+    // 对齐
+    elts = ngx_align_ptr(elts, ngx_cacheline_size);
+
+    //将buckets数组与相应elts对应起来
+    for (i = 0; i &lt; size; i++) {
+        if (test[i] == sizeof(void *)) {
+            continue;
+        }
+
+        buckets[i] = (ngx_hash_elt_t *) elts;
+        elts += test[i];
+    }
+
+    for (i = 0; i &lt; size; i++) {
+        test[i] = 0;
+    }
+
+    //将传进来的每一个hash数据存入hash表
+    for (n = 0; n &lt; nelts; n++) {
+        if (names[n].key.data == NULL) {
+            continue;
+        }
+
+        //计算key，即将被hash的数据在第几个bucket，并计算其对应的elts位置
+        key = names[n].key_hash % size;
+        elt = (ngx_hash_elt_t *) ((u_char *) buckets[key] + test[key]);
+
+        //对ngx_hash_elt_t结构赋值
+        elt-&gt;value = names[n].value;
+        elt-&gt;len = (u_short) names[n].key.len;
+
+        ngx_strlow(elt-&gt;name, names[n].key.data, names[n].key.len);
+
+        //计算下一个要被hash的数据的长度偏移
+        test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&amp;names[n]));
+    }
+
+    for (i = 0; i &lt; size; i++) {
+        if (buckets[i] == NULL) {
+            continue;
+        }
+
+        //test[i]相当于所有被hash的数据总长度
+        elt = (ngx_hash_elt_t *) ((u_char *) buckets[i] + test[i]);
+
+        //将每个bucket的最后一个指针大小区域置NULL
+        elt-&gt;value = NULL;
+    }
+
+    ngx_free(test);//释放该临时空间
+
+    hinit-&gt;hash-&gt;buckets = buckets;
+    hinit-&gt;hash-&gt;size = size;
+
+    return NGX_OK;
+}
+
+</code></pre>
+
+<h2 id="测试代码:31936ad00b1d63154f84a804c2cf2573">测试代码</h2>
+
+<p>该测试代码的完整工程的编译和运行方式请参考 <a href="https://github.com/zieckey/nginx-research">https://github.com/zieckey/nginx-research项目</a>。Linux&amp;Windows都测试通过。</p>
+
+<pre><code class="language-c">static ngx_str_t names[] = {
+    ngx_string(&quot;zieckey&quot;),
+    ngx_string(&quot;codeg&quot;),
+    ngx_string(&quot;jane&quot;) };
+
+static char* descs[] = { &quot;zieckey's id is 0&quot;, &quot;codeg's id is 1&quot;, &quot;jane's id is 2&quot; };
+
+// hash table的一些基本操作
+TEST_UNIT(ngx_hash)
+{
+    ngx_uint_t          k;
+    ngx_pool_t*         pool = g_pool;
+    ngx_hash_init_t     hash_init;
+    ngx_array_t*        elements;
+    ngx_hash_key_t*     arr_node;
+    char*               find;
+    int                 i;
+
+    ngx_cacheline_size = NGX_CPU_CACHE_LINE;
+
+    hash_init.hash = NULL;                      // 置为NULL，让ngx_hash_init来初始化
+    hash_init.key = &amp;ngx_hash_key_lc;          // hash算法函数
+    hash_init.max_size = 1024;                   // max_size
+    hash_init.bucket_size = 64; // ngx_align(64, ngx_cacheline_size);
+    hash_init.name = &quot;codeg_hash&quot;;          // 在log里会用到
+    hash_init.pool = pool;                 // 内存池
+    hash_init.temp_pool = NULL;
+
+    // 创建数组
+    elements = ngx_array_create(pool, H_ARRAYSIZE(names), sizeof(ngx_hash_key_t));
+    for (i = 0; i &lt; H_ARRAYSIZE(names); i++) {
+        arr_node = (ngx_hash_key_t*)ngx_array_push(elements);
+        arr_node-&gt;key = (names[i]);
+        arr_node-&gt;key_hash = ngx_hash_key_lc(arr_node-&gt;key.data, arr_node-&gt;key.len);
+        arr_node-&gt;value = (void*)descs[i];
+        printf(&quot;key: %s , key_hash: %u\n&quot;, arr_node-&gt;key.data, arr_node-&gt;key_hash);
+    }
+
+    H_TEST_ASSERT(ngx_hash_init(&amp;hash_init, (ngx_hash_key_t*)elements-&gt;elts, elements-&gt;nelts) == NGX_OK);
+
+    // 查找
+    k = ngx_hash_key_lc(names[0].data, names[0].len);
+    printf(&quot;%s key is %u\n&quot;, names[0].data, k);
+    find = (char*)ngx_hash_find(hash_init.hash, k, (u_char*)names[0].data, names[0].len);
+    H_TEST_ASSERT(find);
+    if (find) {
+        printf(&quot;get desc of %s : %s\n&quot;, (char*)names[0].data, (char*)find);
+    }
+
+    ngx_array_destroy(elements);
+}
+</code></pre>
+
+<h2 id="参考:31936ad00b1d63154f84a804c2cf2573">参考：</h2>
+
+<ol>
+<li><a href="http://tengine.taobao.org/book/chapter_02.html#ngx-hash-t-100">淘宝：Nginx开发从入门到精通 http://tengine.taobao.org/book/chapter_02.html#ngx-hash-t-100</a></li>
+<li><a href="https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.h">nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.h</a></li>
+<li><a href="https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.c">nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.c</a></li>
+<li><a href="http://blog.csdn.net/livelylittlefish/article/details/6636229">nginx源码分析—hash结构ngx_hash_t(v1.0.4) http://blog.csdn.net/livelylittlefish/article/details/6636229</a></li>
+<li><a href="http://blog.csdn.net/chen19870707/article/details/40794285">菜鸟nginx源码剖析数据结构篇（六） 哈希表 ngx_hash_t（上） http://blog.csdn.net/chen19870707/article/details/40794285</a></li>
+<li><a href="http://my.oschina.net/chenzhuo/blog/177866">nginx代码分析-基本结构-哈希表ngx_hash_t http://my.oschina.net/chenzhuo/blog/177866</a></li>
+<li><a href="https://code.google.com/p/nginxsrp/wiki/NginxCodeReview">nginx源码研究 https://code.google.com/p/nginxsrp/wiki/NginxCodeReview</a></li>
+</ol>
+
+                    </div>
+
+                    
+<div class="bdsharebuttonbox">
+    <a href="#" class="bds_more" data-cmd="more"></a>
+    <a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+    <a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a>
+    <a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a>
+    <a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a>
+    <a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a>
+</div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"24"},"share":{},"image":{"viewList":["weixin","tsina","qzone","renren","tqq"],"viewText":"分享到：","viewSize":"24"},"selectShare":{"bdContainerClass":null,"bdSelectMiniList":["weixin","tsina","qzone","renren","tqq"]}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+
+                    
+
+<div class="ds-thread" data-thread-key="/2015/01/03/ngx_hash_t/" data-title="Nginx源码研究（4）——hash结构ngx_hash_t" data-url="http://blog.codeg.cn/2015/01/03/ngx_hash_t/"></div>
+
+
+<script type="text/javascript">
+                    var duoshuoQuery = {short_name:"codeg"};
+                        (function() {
+                            var ds = document.createElement('script');
+                            ds.type = 'text/javascript';ds.async = true;
+                            ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+                            ds.charset = 'UTF-8';
+                            (document.getElementsByTagName('head')[0]
+                             || document.getElementsByTagName('body')[0]).appendChild(ds);
+                        })();
+                    </script>
+
+                    
+                    <div class="clear"></div>
+                  </div>
+                  
+
+                </div>
+                
+              </article>
+              
+              <div class="clear"></div>
+              
+              
+              
+            </div>
+          </section>
+          <div class="sidebar s1">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>Contact:</p>
+      <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+    </div>
+    
+    
+    
+
+
+    <ul class="post-nav group">
+      <li class="next">
+        
+        <a href="http://blog.codeg.cn/2015/01/03/gbk2utf8-by-golang/" rel="next">
+          <i class="fa fa-chevron-right"></i>
+          <strong>Next post</strong>
+          <span>发布一个批量转码工具:gbk2utf8</span>
+        </a>
+        
+      </li>
+      <li class="previous">
+        
+        <a href="http://blog.codeg.cn/2015/01/03/ngx_array_t/" rel="prev">
+          <i class="fa fa-chevron-left"></i>
+          <strong>Previous Post</strong>
+          <span>Nginx源码研究（3）——Nginx数组ngx_array_t和示例</span>
+        </a>
+        
+      </li>
+    </ul>
+    <div id="search-2" class="widget widget_search"><h3>Search</h3>
+      <form method="get" class="searchform themeform" action="https://www.so.com/s">
+        <div>
+          <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+        </div>
+      </form>
+    </div>
+  </div>
+  
+</div>
+
+          <div class="sidebar s2">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>More</p>
+    </div>
+    <div id="categories-2" class="widget widget_categories"><h3>Categories</h3>
+      <ul>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer id="footer">
+  <section class="container" id="footer-bottom">
+    <div class="container-inner">
+      <a id="back-to-top" href="#"><i class="fa fa-angle-up"></i></a>
+      <div class="pad group">
+        <div class="grid one-half">
+          <div id="copyright">
+            <p>Copyright © 2016. All Rights Reserved. <br>Powered by
+              <a rel="nofollow" href="http://gohugo.io/" target="_blank">Hugo - the static site generator</a>.
+              <a rel="nofollow" href="http://golang.org" target="_blank">#golang</a>.
+            </p>
+          </div>
+          
+        </div>
+        
+        <div class="grid one-half last">
+          <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+        </div>
+      </div>
+
+    </div>
+    
+  </section>
+  
+</footer>
+
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-10147768-2', 'auto');
+  ga('send', 'pageview');
+
+  $('#messagesbsb').remove();
+
+</script>
+</body>
+</html>
+

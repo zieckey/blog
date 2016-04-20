@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <base href="http://blog.codeg.cn/">
+    <script>
+    document._writeOriginal = document.write;
+    document.write = function(str) {
+        if (str.indexOf('livereload.js') > -1) {
+            document._writeOriginal(str);
+        } else {
+            document._writeOriginal('<!-- Be Hijack!! -->');
+        }
+    }
+
+    </script>
+    <title>Golang开源项目源码阅读 - CodeG Blog</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+<meta name="description" content="本文是关于用Golang实现的一些开源项目的简介和源码阅读">
+<meta name="author" content="zieckey">
+<meta name="publisher" content="zieckey">
+<meta name="generator" content="http://gohugo.io/"/>
+
+<meta itemprop="name" content="Golang开源项目源码阅读 - CodeG Blog">
+<meta itemprop="description" content="本文是关于用Golang实现的一些开源项目的简介和源码阅读">
+<meta itemprop="image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+<meta property="og:title" content="Golang开源项目源码阅读 - CodeG Blog" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/" />
+<meta property="og:image" content="http://blog.codeg.cn/public/codeg.jpg" />
+<meta property="og:description" content="本文是关于用Golang实现的一些开源项目的简介和源码阅读">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@zieckey">
+<meta name="twitter:title" content="Golang开源项目源码阅读 - CodeG Blog">
+<meta name="twitter:description" content="本文是关于用Golang实现的一些开源项目的简介和源码阅读">
+<meta name="twitter:creator" content="@zieckey">
+<meta name="twitter:image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+    <script>document.documentElement.className = document.documentElement.className.replace("no-js", "js");</script>
+    <link rel="canonical" href="http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/">
+    <link rel='shortlink' href="http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/"/>
+    <link rel="shortcut icon" href="http://blog.codeg.cn/public/favicon.ico"/>
+    
+<link rel="stylesheet" id="human-style-css" href="http://blog.codeg.cn/wp-content/themes/hueman/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="human-style-css2" href="http://blog.codeg.cn/wp-content/themes/hueman-child/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="responsive-css" href="http://blog.codeg.cn/wp-content/themes/hueman/responsive.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="font-awesome-css" href="http://blog.codeg.cn/wp-content/themes/hueman/fonts/font-awesome.min.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="http://blog.codeg.cn/public/highlight/styles/github.css">
+<script src="http://blog.codeg.cn/public/highlight/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<link rel="stylesheet" id="human-style-css3" href="http://blog.codeg.cn/wp-content/themes/hueman-child/user.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="public/font/hack/css/hack.min.css">
+
+<script type="text/javascript" src="assets/js/jquery-2.1.1.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/jquery.jplayer.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/scripts.js"></script>
+<script type="text/javascript" src="assets/picturefill/picturefill.min.js"></script>
+<script type="text/javascript" src="assets/js/jquery.matchHeight-min.js"></script>
+<script type="text/javascript" async defer src="assets/js/myblog.js"></script>
+
+
+    
+    <script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?16a8034e97e7943d9bd7f7310a59a7d8";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+
+
+    
+    <script src="http://s4.cnzz.com/z_stat.php?id=1253999623&web_id=1253999623" language="JavaScript"></script>
+</head>
+
+<body class="single single-post single-format-standard col-3cm full-width topbar-enabled chrome">
+<div id="wrapper">
+  <header id="header">
+
+  <nav class="nav-container group" id="nav-topbar">
+    <div class="nav-toggle"><i class="fa fa-bars"></i></div>
+    <div class="nav-text"></div>
+    <div class="nav-wrap container">
+      <a rel="nofollow" href="http://blog.codeg.cn/" class="nav-cs-icon">
+        <img width="40" height="40" src="http://blog.codeg.cn/public/codeg.jpg" alt="codeg" title="Home">
+      </a>
+      <ul id="menu-default-menu" class="nav container-inner group">
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/">首页</a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/post/">技术文章</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/about/">关于我</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/feed.xml" type="application/rss+xml" target="_blank">订阅</a>
+        </li>
+        <li class="menu-item menu-item-type-post_type menu-item-text">
+        聪明的解释器
+        </li>
+      </ul>
+    </div>
+
+    <div class="container">
+      <div class="container-inner">
+        <div class="toggle-search"><i class="fa fa-search"></i></div>
+        <div class="search-expand">
+          <div class="search-expand-inner">
+            <form method="get" class="searchform themeform" action="https://www.so.com/s">
+              <div>
+                <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+
+  </nav>
+  
+
+  <div class="container group">
+    <div class="container-inner">
+
+      <div class="group pad">
+
+        <div class="group pad">
+          <h1 class="site-title">
+            <a rel="nofollow" href="http://blog.codeg.cn/" rel="home">
+              <img style="border-radius: 50%;width:72px;height:72px;margin:0 auto;" alt="codeg" src="http://blog.codeg.cn/public/codeg.jpg"></img>
+              CodeG Blog
+            </a>
+          </h1>
+          <p class="site-description"> 思路决定出路，态度决定高度。 </p>
+        </div>
+
+      </div>
+    </div>
+    
+  </div>
+  
+
+</header>
+
+
+
+  <div class="container" id="page">
+    <div class="container-inner">
+      <div class="main">
+        <div class="main-inner group">
+          <section class="content">
+            <div class="page-title pad group">
+              <ul class="meta-single group">
+                
+                <li class="category">
+                  <a href="http://blog.codeg.cn/categories/blog/" rel="category tag">blog</a>
+                </li>
+                
+              </ul>
+            </div>
+
+            <div class="pad group">
+
+              <article
+                  class="post type-post status-publish format-standard has-post-thumbnail hentry category-australien tag-bondi-beach tag-city2surf tag-sydney">
+                <div class="post-inner group">
+
+                  <h1 class="post-title">Golang开源项目源码阅读</h1>
+
+                  <p class="post-byline">
+                    By <a target="_blank" href="http://blog.codeg.cn/">CodeG</a> · 2015年09月19日 · 782 Words ·
+                    ~2min reading time |
+                    <a href="https://github.com/zieckey/blog/edit/master/content/post/blog/2015-09-19-golang-project-source-code-reading.md"
+                       target="_blank">编辑这个页面</a>
+                    | Tags:
+                    
+                    <a rel="tag" href="http://blog.codeg.cn/tags/golang">Golang</a>
+                    
+                  </p>
+
+                  <div class="clear"></div>
+
+                  <div class="entry">
+
+                    <div style="border: 1px dashed #e0e0e0; padding: 10px 10px 10px 10px; background-color: #fffeee; background-repeat: no-repeat; background-attachment: scroll; background-position: 1% 50%; -moz-background-size: auto auto; -moz-background-clip: -moz-initial; -moz-background-origin: -moz-initial; -moz-background-inline-policy: -moz-initial;">
+                      
+                      
+                      
+                      
+                      <div>
+                        
+                        
+                        
+                        
+                        本文 <a target="_blank" href="http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/">http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/</a> 是作者<a target="_blank" href="http://blog.codeg.cn/">CodeG</a>在研究和学习相关内容时所做的笔记，欢迎广大朋友指正和交流！
+                        版权所有，欢迎转载和分享，但请保留此段声明。 </p>
+                      </div>
+
+                    </div>
+
+                    <div class="entry-inner">
+                      
+
+<h2 id="总览:95ce2e9a2ebc2effbd6ffc159f6de67a">总览</h2>
+
+<h3 id="github-com-julienschmidt-httproute:95ce2e9a2ebc2effbd6ffc159f6de67a">github.com/julienschmidt/httproute</h3>
+
+<p><a href="https://github.com/julienschmidt/httprouter" title="httprouter">httprouter</a> 是一个轻量级的高性能HTTP请求分发器，英文称之为multiplexer，简称mux。</p>
+
+<h4 id="httproute特性:95ce2e9a2ebc2effbd6ffc159f6de67a">httproute特性</h4>
+
+<ol>
+<li>仅支持精确匹配，及只匹配一个模式或不会匹配到任何模式。相对于其他一些mux，例如go原生的 <a href="http://golang.org/pkg/net/http/#ServeMux">http.ServerMux</a>, 会使得一个请求URL匹配多个模式，从而需要有优先级顺序，例如最长匹配、最先匹配等等。</li>
+<li>不需要关心URL结尾的斜杠</li>
+<li>路径自动归一化和矫正</li>
+<li>零内存分配</li>
+<li>高性能。这一点可以参考<a href="https://github.com/julienschmidt/go-http-routing-benchmark">Benchmarks</a></li>
+<li>再也不会崩溃</li>
+</ol>
+
+<h4 id="示例代码:95ce2e9a2ebc2effbd6ffc159f6de67a">示例代码</h4>
+
+<p>使用起来非常简单，与 <code>net/http</code> 包提供的接口非常类似，甚至还提供了完全的一致的接口。</p>
+
+<pre><code class="language-go">package main
+
+import (
+    &quot;fmt&quot;
+    &quot;github.com/julienschmidt/httprouter&quot;
+    &quot;net/http&quot;
+    &quot;log&quot;
+)
+
+func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+    fmt.Fprint(w, &quot;Welcome!\n&quot;)
+}
+
+func Hello(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+    fmt.Fprintf(w, &quot;hello, %s!\n&quot;, ps.ByName(&quot;name&quot;))
+}
+
+func main() {
+    router := httprouter.New()
+    router.GET(&quot;/&quot;, Index)
+    router.GET(&quot;/hello/:name&quot;, Hello)
+
+    log.Fatal(http.ListenAndServe(&quot;:8080&quot;, router))
+}
+</code></pre>
+
+<h4 id="源码阅读:95ce2e9a2ebc2effbd6ffc159f6de67a">源码阅读</h4>
+
+<p>httproute内部通过实现一个trie树来提高性能。核心代码就是golang标准库中 http.Handler 接口，在该函数中实现自己的请求路由分发策略。</p>
+
+<pre><code class="language-go">
+// ServeHTTP 实现
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if r.PanicHandler != nil {
+		defer r.recv(w, req)
+	}
+
+	if root := r.trees[req.Method]; root != nil {
+		path := req.URL.Path
+
+		if handle, ps, tsr := root.getValue(path); handle != nil {
+			handle(w, req, ps)
+			return
+		} else if req.Method != &quot;CONNECT&quot; &amp;&amp; path != &quot;/&quot; {
+			code := 301 // Permanent redirect, request with GET method
+			if req.Method != &quot;GET&quot; {
+				// Temporary redirect, request with same method
+				// As of Go 1.3, Go does not support status code 308.
+				code = 307
+			}
+
+			if tsr &amp;&amp; r.RedirectTrailingSlash {
+				if len(path) &gt; 1 &amp;&amp; path[len(path)-1] == '/' {
+					req.URL.Path = path[:len(path)-1]
+				} else {
+					req.URL.Path = path + &quot;/&quot;
+				}
+				http.Redirect(w, req, req.URL.String(), code)
+				return
+			}
+
+			// Try to fix the request path
+			if r.RedirectFixedPath {
+				fixedPath, found := root.findCaseInsensitivePath(
+					CleanPath(path),
+					r.RedirectTrailingSlash,
+				)
+				if found {
+					req.URL.Path = string(fixedPath)
+					http.Redirect(w, req, req.URL.String(), code)
+					return
+				}
+			}
+		}
+	}
+
+	// Handle 405
+	if r.HandleMethodNotAllowed {
+		for method := range r.trees {
+			// Skip the requested method - we already tried this one
+			if method == req.Method {
+				continue
+			}
+
+			handle, _, _ := r.trees[method].getValue(req.URL.Path)
+			if handle != nil {
+				if r.MethodNotAllowed != nil {
+					r.MethodNotAllowed.ServeHTTP(w, req)
+				} else {
+					http.Error(w,
+						http.StatusText(http.StatusMethodNotAllowed),
+						http.StatusMethodNotAllowed,
+					)
+				}
+				return
+			}
+		}
+	}
+
+	// Handle 404
+	if r.NotFound != nil {
+		r.NotFound.ServeHTTP(w, req)
+	} else {
+		http.NotFound(w, req)
+	}
+}
+
+</code></pre>
+
+<h3 id="github-com-nbio-httpcontext:95ce2e9a2ebc2effbd6ffc159f6de67a">github.com/nbio/httpcontext</h3>
+
+<p><a href="github.com/nbio/httpcontext">httpcontext</a>该库提供更灵活的http请求上下文机制。具体实现上，使用了一个小技巧，就是通过动态修改 <code>http.Request.Body</code> 接口来实现的。先看看代码：</p>
+
+<pre><code class="language-go">// 核心结构体
+type contextReadCloser struct {
+	io.ReadCloser
+	context map[interface{}]interface{}
+}
+</code></pre>
+
+<p>上述结构体实现由于直接继承了 ReadCloser 接口，因此可以直接替换掉 <code>http.Request.Body</code> 。</p>
+
+<pre><code class="language-go">func getContextReadCloser(req *http.Request) ContextReadCloser {
+	crc, ok := req.Body.(ContextReadCloser)
+	if !ok {
+		crc = &amp;contextReadCloser{
+			ReadCloser: req.Body,
+			context:    make(map[interface{}]interface{}),
+		}
+		req.Body = crc
+	}
+	return crc
+}
+</code></pre>
+
+<p>我们一起看看下面的示例代码来感受一下这个库的用法：</p>
+
+<pre><code class="language-go">package main
+
+import (
+    &quot;fmt&quot;
+    &quot;github.com/nbio/httpcontext&quot;
+    &quot;net/http&quot;
+    &quot;log&quot;
+)
+
+func Hello(w http.ResponseWriter, r *http.Request) {
+    httpcontext.Set(r, &quot;key1&quot;, &quot;value1&quot;) // Set a context with this request r
+    val := httpcontext.Get(r, &quot;key1&quot;)    // Get the context
+    v, _ := val.(string)
+    fmt.Printf(&quot;Got a value associated with key1 : %v\n&quot;, v)
+    w.Write([]byte(&quot;OK&quot;))
+}
+
+func main() {
+    http.HandleFunc(&quot;/hello&quot;, Hello)
+    log.Fatal(http.ListenAndServe(&quot;:8080&quot;, nil))
+}
+</code></pre>
+
+                    </div>
+
+                    
+<div class="bdsharebuttonbox">
+    <a href="#" class="bds_more" data-cmd="more"></a>
+    <a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+    <a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a>
+    <a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a>
+    <a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a>
+    <a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a>
+</div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"24"},"share":{},"image":{"viewList":["weixin","tsina","qzone","renren","tqq"],"viewText":"分享到：","viewSize":"24"},"selectShare":{"bdContainerClass":null,"bdSelectMiniList":["weixin","tsina","qzone","renren","tqq"]}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+
+                    
+
+<div class="ds-thread" data-thread-key="/2015/09/19/golang-project-source-code-reading/" data-title="Golang开源项目源码阅读" data-url="http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/"></div>
+
+
+<script type="text/javascript">
+                    var duoshuoQuery = {short_name:"codeg"};
+                        (function() {
+                            var ds = document.createElement('script');
+                            ds.type = 'text/javascript';ds.async = true;
+                            ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+                            ds.charset = 'UTF-8';
+                            (document.getElementsByTagName('head')[0]
+                             || document.getElementsByTagName('body')[0]).appendChild(ds);
+                        })();
+                    </script>
+
+                    
+                    <div class="clear"></div>
+                  </div>
+                  
+
+                </div>
+                
+              </article>
+              
+              <div class="clear"></div>
+              
+              
+              
+            </div>
+          </section>
+          <div class="sidebar s1">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>Contact:</p>
+      <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+    </div>
+    
+    
+    
+
+
+    <ul class="post-nav group">
+      <li class="next">
+        
+        <a href="http://blog.codeg.cn/2015/06/17/quic-source-code-reading/" rel="next">
+          <i class="fa fa-chevron-right"></i>
+          <strong>Next post</strong>
+          <span>QUIC（Quick UDP Internet Connections）源代码阅读</span>
+        </a>
+        
+      </li>
+      <li class="previous">
+        
+        <a href="http://blog.codeg.cn/2015/10/08/ansible/" rel="prev">
+          <i class="fa fa-chevron-left"></i>
+          <strong>Previous Post</strong>
+          <span>ansible简介</span>
+        </a>
+        
+      </li>
+    </ul>
+    <div id="search-2" class="widget widget_search"><h3>Search</h3>
+      <form method="get" class="searchform themeform" action="https://www.so.com/s">
+        <div>
+          <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+        </div>
+      </form>
+    </div>
+  </div>
+  
+</div>
+
+          <div class="sidebar s2">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>More</p>
+    </div>
+    <div id="categories-2" class="widget widget_categories"><h3>Categories</h3>
+      <ul>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer id="footer">
+  <section class="container" id="footer-bottom">
+    <div class="container-inner">
+      <a id="back-to-top" href="#"><i class="fa fa-angle-up"></i></a>
+      <div class="pad group">
+        <div class="grid one-half">
+          <div id="copyright">
+            <p>Copyright © 2016. All Rights Reserved. <br>Powered by
+              <a rel="nofollow" href="http://gohugo.io/" target="_blank">Hugo - the static site generator</a>.
+              <a rel="nofollow" href="http://golang.org" target="_blank">#golang</a>.
+            </p>
+          </div>
+          
+        </div>
+        
+        <div class="grid one-half last">
+          <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+        </div>
+      </div>
+
+    </div>
+    
+  </section>
+  
+</footer>
+
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-10147768-2', 'auto');
+  ga('send', 'pageview');
+
+  $('#messagesbsb').remove();
+
+</script>
+</body>
+</html>
+

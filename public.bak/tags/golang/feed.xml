@@ -1,0 +1,2428 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Golang on CodeG Blog</title>
+    <link>http://blog.codeg.cn/tags/golang/</link>
+    <description>Recent content in Golang on CodeG Blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-CN</language>
+    <copyright>Copyright (c) 2015. All rights reserved.</copyright>
+    <lastBuildDate>Wed, 24 Feb 2016 20:43:00 +0000</lastBuildDate>
+    <atom:link href="http://blog.codeg.cn/tags/golang/feed/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>使用Golang利用ectd实现一个分布式锁</title>
+      <link>http://blog.codeg.cn/post/blog/2016-02-24-distrubute-lock-over-etcd/</link>
+      <pubDate>Wed, 24 Feb 2016 20:43:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/post/blog/2016-02-24-distrubute-lock-over-etcd/</guid>
+      <description>
+
+&lt;p&gt;&lt;code&gt;etcd&lt;/code&gt;是随着&lt;code&gt;CoreOS&lt;/code&gt;项目一起成长起来的，随着Golang和CoreOS等项目在开源社区日益火热，
+&lt;code&gt;etcd&lt;/code&gt;作为一个高可用、强一致性的分布式Key-Value存储系统被越来越多的开发人员关注和使用。&lt;/p&gt;
+
+&lt;p&gt;这篇&lt;a href=&#34;http://www.infoq.com/cn/articles/etcd-interpretation-application-scenario-implement-principle&#34;&gt;文章&lt;/a&gt;全方位介绍了etcd的应用场景，这里简单摘要如下：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;服务发现（Service Discovery）&lt;/li&gt;
+&lt;li&gt;消息发布与订阅&lt;/li&gt;
+&lt;li&gt;负载均衡&lt;/li&gt;
+&lt;li&gt;分布式通知与协调&lt;/li&gt;
+&lt;li&gt;分布式锁&lt;/li&gt;
+&lt;li&gt;分布式队列&lt;/li&gt;
+&lt;li&gt;集群监控与Leader竞选&lt;/li&gt;
+&lt;li&gt;为什么用etcd而不用ZooKeeper&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;本文重点介绍如何利用&lt;code&gt;ectd&lt;/code&gt;实现一个分布式锁。
+锁的概念大家都熟悉，当我们希望某一事件在同一时间点只有一个线程(goroutine)在做，或者某一个资源在同一时间点只有一个服务能访问，这个时候我们就需要用到锁。
+例如我们要实现一个分布式的id生成器，多台服务器之间的协调就非常麻烦。分布式锁就正好派上用场。&lt;/p&gt;
+
+&lt;p&gt;其基本实现原理为：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;在ectd系统里创建一个key&lt;/li&gt;
+&lt;li&gt;如果创建失败，key存在，则监听该key的变化事件，直到该key被删除，回到1&lt;/li&gt;
+&lt;li&gt;如果创建成功，则认为我获得了锁&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;具体代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package etcdsync
+
+import (
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;io&amp;quot;
+	&amp;quot;os&amp;quot;
+	&amp;quot;sync&amp;quot;
+	&amp;quot;time&amp;quot;
+
+	&amp;quot;github.com/coreos/etcd/client&amp;quot;
+	&amp;quot;github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/context&amp;quot;
+)
+
+const (
+	defaultTTL = 60
+	defaultTry = 3
+	deleteAction = &amp;quot;delete&amp;quot;
+	expireAction = &amp;quot;expire&amp;quot;
+)
+
+// A Mutex is a mutual exclusion lock which is distributed across a cluster.
+type Mutex struct {
+	key    string
+	id     string // The identity of the caller
+	client client.Client
+	kapi   client.KeysAPI
+	ctx    context.Context
+	ttl    time.Duration
+	mutex  *sync.Mutex
+	logger io.Writer
+}
+
+// New creates a Mutex with the given key which must be the same
+// across the cluster nodes.
+// machines are the ectd cluster addresses
+func New(key string, ttl int, machines []string) *Mutex {
+	cfg := client.Config{
+		Endpoints:               machines,
+		Transport:               client.DefaultTransport,
+		HeaderTimeoutPerRequest: time.Second,
+	}
+
+	c, err := client.New(cfg)
+	if err != nil {
+		return nil
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil
+	}
+
+	if len(key) == 0 || len(machines) == 0 {
+		return nil
+	}
+
+	if key[0] != &#39;/&#39; {
+		key = &amp;quot;/&amp;quot; + key
+	}
+
+	if ttl &amp;lt; 1 {
+		ttl = defaultTTL
+	}
+
+	return &amp;amp;Mutex{
+		key:    key,
+		id:     fmt.Sprintf(&amp;quot;%v-%v-%v&amp;quot;, hostname, os.Getpid(), time.Now().Format(&amp;quot;20060102-15:04:05.999999999&amp;quot;)),
+		client: c,
+		kapi:   client.NewKeysAPI(c),
+		ctx: context.TODO(),
+		ttl: time.Second * time.Duration(ttl),
+		mutex:  new(sync.Mutex),
+	}
+}
+
+// Lock locks m.
+// If the lock is already in use, the calling goroutine
+// blocks until the mutex is available.
+func (m *Mutex) Lock() (err error) {
+	m.mutex.Lock()
+	for try := 1; try &amp;lt;= defaultTry; try++ {
+		if m.lock() == nil {
+			return nil
+		}
+		
+		m.debug(&amp;quot;Lock node %v ERROR %v&amp;quot;, m.key, err)
+		if try &amp;lt; defaultTry {
+			m.debug(&amp;quot;Try to lock node %v again&amp;quot;, m.key, err)
+		}
+	}
+	return err
+}
+
+func (m *Mutex) lock() (err error) {
+	m.debug(&amp;quot;Trying to create a node : key=%v&amp;quot;, m.key)
+	setOptions := &amp;amp;client.SetOptions{
+		PrevExist:client.PrevNoExist,
+		TTL:      m.ttl,
+	}
+	resp, err := m.kapi.Set(m.ctx, m.key, m.id, setOptions)
+	if err == nil {
+		m.debug(&amp;quot;Create node %v OK [%q]&amp;quot;, m.key, resp)
+		return nil
+	}
+	m.debug(&amp;quot;Create node %v failed [%v]&amp;quot;, m.key, err)
+	e, ok := err.(client.Error)
+	if !ok {
+		return err
+	}
+
+	if e.Code != client.ErrorCodeNodeExist {
+		return err
+	}
+
+	// Get the already node&#39;s value.
+	resp, err = m.kapi.Get(m.ctx, m.key, nil)
+	if err != nil {
+		return err
+	}
+	m.debug(&amp;quot;Get node %v OK&amp;quot;, m.key)
+	watcherOptions := &amp;amp;client.WatcherOptions{
+		AfterIndex : resp.Index,
+		Recursive:false,
+	}
+	watcher := m.kapi.Watcher(m.key, watcherOptions)
+	for {
+		m.debug(&amp;quot;Watching %v ...&amp;quot;, m.key)
+		resp, err = watcher.Next(m.ctx)
+		if err != nil {
+			return err
+		}
+
+		m.debug(&amp;quot;Received an event : %q&amp;quot;, resp)
+		if resp.Action == deleteAction || resp.Action == expireAction {
+			return nil
+		}
+	}
+
+}
+
+// Unlock unlocks m.
+// It is a run-time error if m is not locked on entry to Unlock.
+//
+// A locked Mutex is not associated with a particular goroutine.
+// It is allowed for one goroutine to lock a Mutex and then
+// arrange for another goroutine to unlock it.
+func (m *Mutex) Unlock() (err error) {
+	defer m.mutex.Unlock()
+	for i := 1; i &amp;lt;= defaultTry; i++ {
+		var resp *client.Response
+		resp, err = m.kapi.Delete(m.ctx, m.key, nil)
+		if err == nil {
+			m.debug(&amp;quot;Delete %v OK&amp;quot;, m.key)
+			return nil
+		}
+		m.debug(&amp;quot;Delete %v falied: %q&amp;quot;, m.key, resp)
+		e, ok := err.(client.Error)
+		if ok &amp;amp;&amp;amp; e.Code == client.ErrorCodeKeyNotFound {
+			return nil
+		}
+	}
+	return err
+}
+
+func (m *Mutex) debug(format string, v ...interface{}) {
+	if m.logger != nil {
+		m.logger.Write([]byte(m.id))
+		m.logger.Write([]byte(&amp;quot; &amp;quot;))
+		m.logger.Write([]byte(fmt.Sprintf(format, v...)))
+		m.logger.Write([]byte(&amp;quot;\n&amp;quot;))
+	}
+}
+
+func (m *Mutex) SetDebugLogger(w io.Writer) {
+	m.logger = w
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;其实类似的实现有很多，但目前都已经过时，使用的都是被官方标记为&lt;code&gt;deprecated&lt;/code&gt;的项目。且大部分接口都不如上述代码简单。
+使用上，跟Golang官方sync包的Mutex接口非常类似，先&lt;code&gt;New()&lt;/code&gt;，然后调用&lt;code&gt;Lock()&lt;/code&gt;，使用完后调用&lt;code&gt;Unlock()&lt;/code&gt;，就三个接口，就是这么简单。示例代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;github.com/zieckey/etcdsync&amp;quot;
+	&amp;quot;log&amp;quot;
+)
+
+func main() {
+	//etcdsync.SetDebug(true)
+	log.SetFlags(log.Ldate|log.Ltime|log.Lshortfile)
+	m := etcdsync.New(&amp;quot;/etcdsync&amp;quot;, &amp;quot;123&amp;quot;, []string{&amp;quot;http://127.0.0.1:2379&amp;quot;})
+	if m == nil {
+		log.Printf(&amp;quot;etcdsync.NewMutex failed&amp;quot;)
+	}
+	err := m.Lock()
+	if err != nil {
+		log.Printf(&amp;quot;etcdsync.Lock failed&amp;quot;)
+	} else {
+		log.Printf(&amp;quot;etcdsync.Lock OK&amp;quot;)
+	}
+
+	log.Printf(&amp;quot;Get the lock. Do something here.&amp;quot;)
+
+	err = m.Unlock()
+	if err != nil {
+		log.Printf(&amp;quot;etcdsync.Unlock failed&amp;quot;)
+	} else {
+		log.Printf(&amp;quot;etcdsync.Unlock OK&amp;quot;)
+	}
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;参考:cc4776a5974d000eb2d6ff22e22b2c04&#34;&gt;参考&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/etcdsync&#34;&gt;etcdsync项目地址&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/coreos/etcd&#34;&gt;ectd项目官方地址&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>编译Golang包为C语言库文件</title>
+      <link>http://blog.codeg.cn/2016/02/19/sharing-golang-package-to-C/</link>
+      <pubDate>Fri, 19 Feb 2016 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2016/02/19/sharing-golang-package-to-C/</guid>
+      <description>
+
+&lt;p&gt;Go 1.5发布后，其包含一个特性：可以编译生成C语言动态链接库或静态库。本文给出了示例代码和用法。&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;go build&lt;/code&gt;和&lt;code&gt;go install&lt;/code&gt;命令，可以使用参数 &lt;code&gt;-buildmode&lt;/code&gt; 来指定生成哪种类型的二进制目标文件。请见&lt;a href=&#34;https://golang.org/cmd/go/&#34;&gt;https://golang.org/cmd/go/#Description of build modes&lt;/a&gt; 详细说明。&lt;/p&gt;
+
+&lt;p&gt;当前我们使用 &lt;code&gt;-buildmode=c-archive&lt;/code&gt; 来示例和测试。&lt;/p&gt;
+
+&lt;p&gt;Golang源文件：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;
+// file hello.go
+package main
+
+  port &amp;quot;C&amp;quot;
+import &amp;quot;fmt&amp;quot;
+
+//export SayHello
+func SayHello(name string) {
+    fmt.Printf(&amp;quot;func in Golang SayHello says: Hello, %s!\n&amp;quot;, name)
+}
+
+//export SayHelloByte
+func SayHelloByte(name []byte) {
+    fmt.Printf(&amp;quot;func in Golang SayHelloByte says: Hello, %s!\n&amp;quot;, string(name))
+}
+
+//export SayBye
+func SayBye() {
+    fmt.Println(&amp;quot;func in Golang SayBye says: Bye!&amp;quot;)
+}
+
+func main() {
+    // We need the main function to make possible
+    // CGO compiler to compile the package as C shared library
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;使用命令&lt;code&gt;go build -buildmode=c-archive -o libhello.a hello.go&lt;/code&gt;可以生成一个C语言静态库&lt;code&gt;libhello.a&lt;/code&gt;和头文件&lt;code&gt;libhello.h&lt;/code&gt;。
+然后我们再写个C语言程序来调用这个库，如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;// file hello.c
+#include &amp;lt;stdio.h&amp;gt;
+#include &amp;quot;libhello.h&amp;quot;
+
+int main() {
+  printf(&amp;quot;This is a C Application.\n&amp;quot;);
+  GoString name = {(char*)&amp;quot;Jane&amp;quot;, 4};
+  SayHello(name);
+  GoSlice buf = {(void*)&amp;quot;Jane&amp;quot;, 4, 4};
+  SayHelloByte(buf);
+  SayBye();
+  return 0;
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;使用命令&lt;code&gt;gcc -o hello hello.c libhello.a -pthread&lt;/code&gt;来编译生成一个可执行文件&lt;code&gt;hello&lt;/code&gt;。执行命令如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ go build -buildmode=c-archive -o libhello.a hello.go
+$ gcc -o hello hello.c libhello.a -pthread
+$ ./hello 
+This is a C Application.
+func in Golang SayHello says: Hello, Jane!
+func in Golang SayHelloByte says: Hello, Jane!
+func in Golang SayBye says: Bye!
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;备注：目前Golang还不支持将一个struct结构导出到C库中。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考:d07f2a12ab89ca994adea10c36662f05&#34;&gt;参考&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://blog.ralch.com/tutorial/golang-sharing-libraries/&#34;&gt;Sharing Golang packages to C and Go&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Golang发送邮件</title>
+      <link>http://blog.codeg.cn/2016/02/14/send-email-for-golang/</link>
+      <pubDate>Sun, 14 Feb 2016 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2016/02/14/send-email-for-golang/</guid>
+      <description>
+
+&lt;p&gt;本文介绍一个简单的方法使用Go语言发送邮件。直接调用系统自带的&lt;code&gt;mail&lt;/code&gt;命令发送邮件。&lt;/p&gt;
+
+&lt;p&gt;在网上找了很多例子，基本上都是基于Golang本身自带的&lt;code&gt;smtp&lt;/code&gt;包来实现的，参考 &lt;a href=&#34;http://www.tuicool.com/articles/e2qUv2&#34;&gt;http://www.tuicool.com/articles/e2qUv2&lt;/a&gt;，这里需要以下几个关键信息：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;邮箱地址(邮箱用户名)&lt;/li&gt;
+&lt;li&gt;邮箱密码&lt;/li&gt;
+&lt;li&gt;邮件提供商hostname&lt;/li&gt;
+&lt;li&gt;smtp服务器地址和端口&lt;/li&gt;
+&lt;li&gt;邮件主题、正文、接收人列表&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;上述5个信息中，实际上我们关心的其实只有第5个，其他4个都不是太关心。而且，如果我们想写一段开源代码，这里就把邮箱用户名和密码给暴露了，不太合适。我于是想到了PHP中的&lt;code&gt;mail&lt;/code&gt;这个发送邮件的函数来，PHP是如何实现邮件发送的功能呢？我搜素PHP的源码发现在非Windows平台使用的系统自带的&lt;code&gt;sendmail&lt;/code&gt;命令来发送的，具体代码请参考: php-5.3.3/ext/standard/mail.c:php_mail&lt;/p&gt;
+
+&lt;p&gt;受此启发，我在golang中也这么实现不就简单了么？下面是源码：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;import (
+	&amp;quot;os/exec&amp;quot;
+	&amp;quot;log&amp;quot;
+	&amp;quot;runtime&amp;quot;
+)
+
+// SendMail sends an email to the addresses using &#39;mail&#39; command on *nux platform.
+func SendMail(title, message string, email ...string) error {
+	if runtime.GOOS == &amp;quot;windows&amp;quot; {
+		log.Printf(&amp;quot;TODO: cannot send email on windows title=[%v] messagebody=[%v]&amp;quot;, title, message)
+		return nil
+	}
+	mailCommand := exec.Command(&amp;quot;mail&amp;quot;, &amp;quot;-s&amp;quot;, title)
+	mailCommand.Args = append(mailCommand.Args, email...)
+	stdin, err := mailCommand.StdinPipe()
+	if err != nil {
+		log.Printf(&amp;quot;StdinPipe failed to perform: %s (Command: %s, Arguments: %s)&amp;quot;, err, mailCommand.Path, mailCommand.Args)
+		return err
+	}
+	stdin.Write([]byte(message))
+	stdin.Close()
+	_, err = mailCommand.Output()
+	if err != nil || !mailCommand.ProcessState.Success() {
+		log.Printf(&amp;quot;send email ERROR : &amp;lt;%v&amp;gt; title=[%v] messagebody=[%v]&amp;quot;, err.Error(), title, message)
+		return err
+	}
+
+	return nil
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上述源码放到这里了： &lt;a href=&#34;https://github.com/zieckey/gocom/tree/master/tmail&#34;&gt;https://github.com/zieckey/gocom/tree/master/tmail&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;参考:6819fbcd570de1ca567e85fb36deeb5f&#34;&gt;参考&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.tuicool.com/articles/e2qUv2&#34;&gt;Golang Go语言发送邮件的方法&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Golang版本的remove_if函数实现</title>
+      <link>http://blog.codeg.cn/2016/02/14/golang-remove_if/</link>
+      <pubDate>Sun, 14 Feb 2016 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2016/02/14/golang-remove_if/</guid>
+      <description>&lt;p&gt;C++中的std::remove_if函数实现了一个算法，可以将一个容器中的元素按照一定的规则进行删除，但Go语言中却没有类似的函数。代码其实很简单，如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;func RemoveIf(s string, f func(rune) bool) string {
+	runes := []rune(s)
+	result := 0
+	for i, r := range runes  {
+		if !f(r) {
+			runes[result] = runes[i]
+			result++
+		}
+	}
+
+	return string(runes[0:result])
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上述算法是参考C++标准库中的实现(&lt;code&gt;bits/stl_algo.h:remove_if&lt;/code&gt;)，但比C++的效率低，因为多了两次转换（&lt;code&gt;string&lt;/code&gt;与&lt;code&gt;[]rune&lt;/code&gt;互相转换两次）。&lt;/p&gt;
+
+&lt;p&gt;进一步思考：这两次转换不知道是否可以通过其他方式节省掉？类似于C++的实现，就地删除（并没有新开辟内存空间）。&lt;/p&gt;
+
+&lt;p&gt;上述源码放到这里了： &lt;a href=&#34;https://github.com/zieckey/gocom/tree/master/tstrings&#34;&gt;https://github.com/zieckey/gocom/tree/master/tstrings&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;必须要吐槽一下Go语言没有泛型，如果要针对&lt;code&gt;[]byte&lt;/code&gt;就又得要重复实现一遍类似的代码。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>使用grafana&#43;influxdb搭建炫酷的实时可视化监控平台</title>
+      <link>http://blog.codeg.cn/2016/02/05/influxdb-grafana/</link>
+      <pubDate>Fri, 05 Feb 2016 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2016/02/05/influxdb-grafana/</guid>
+      <description>
+
+&lt;p&gt;最近看到一篇介绍influxdb的文章，然后又看到用grafana配合图形展示，就简单试用了一下，确实还不错。但其中也遇到一些低级问题，这篇博文就当一个流水文档吧，便于以后查阅。&lt;/p&gt;
+
+&lt;p&gt;这几个组件的使用方式为：数据收集 &amp;ndash;&amp;gt; influxdb存储 &amp;ndash;&amp;gt; grafana展现。&lt;/p&gt;
+
+&lt;p&gt;本文所述的influxdb版本适用于为0.9x，grafana版本适用于2.6&lt;/p&gt;
+
+&lt;h2 id=&#34;influxdb介绍:9d3466cfc8ab63c666c05dcaaea0b79f&#34;&gt;influxdb介绍&lt;/h2&gt;
+
+&lt;p&gt;InfluxDB 是一个开源分布式的时序、事件和指标数据库。使用 Go 语言编写，无需外部依赖。其设计目标是实现分布式和水平伸缩扩展。
+它有三大特性：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;Time Series （时间序列）：你可以使用与时间有关的相关函数（如最大，最小，求和等）&lt;/li&gt;
+&lt;li&gt;Metrics（度量）：你可以实时对大量数据进行计算&lt;/li&gt;
+&lt;li&gt;Eevents（事件）：它支持任意的事件数据&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;又有如下特点：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;schemaless(无结构)，可以是任意数量的列&lt;/li&gt;
+&lt;li&gt;Scalable&lt;/li&gt;
+&lt;li&gt;min, max, sum, count, mean, median 一系列函数，方便统计&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;按照其官方文档，可以很方便的在centos上安装：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;cat &amp;lt;&amp;lt;EOF | sudo tee /etc/yum.repos.d/influxdb.repo
+[influxdb]
+name = InfluxDB Repository - RHEL \$releasever
+baseurl = https://repos.influxdata.com/rhel/\$releasever/\$basearch/stable
+enabled = 1
+gpgcheck = 1
+gpgkey = https://repos.influxdata.com/influxdb.key
+EOF
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然后使用yum安装：
+    sudo yum install influxdb&lt;/p&gt;
+
+&lt;p&gt;直接在前台启动也很方便，输入命令 &lt;code&gt;influxdb&lt;/code&gt; 即可启动。&lt;/p&gt;
+
+&lt;p&gt;默认情况下influxdb会监听一下端口：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;8083端口，供HTTP web管理平台使用。&lt;/li&gt;
+&lt;li&gt;8086端口，供HTTP API接口使用，例如写入数据、查询数据等等&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;grafana介绍:9d3466cfc8ab63c666c05dcaaea0b79f&#34;&gt;grafana介绍&lt;/h2&gt;
+
+&lt;p&gt;grafana 是以纯 Javascript 开发的前端工具，用于访问 InfluxDB，自定义报表、显示图表等。&lt;/p&gt;
+
+&lt;h3 id=&#34;安装-grafana:9d3466cfc8ab63c666c05dcaaea0b79f&#34;&gt;安装 grafana&lt;/h3&gt;
+
+&lt;p&gt;在其&lt;a href=&#34;http://grafana.org/download/&#34;&gt;官网http://grafana.org/download/&lt;/a&gt;可以下载合适的安装包。安装也很方便。&lt;/p&gt;
+
+&lt;h3 id=&#34;添加数据源-influxdb:9d3466cfc8ab63c666c05dcaaea0b79f&#34;&gt;添加数据源：influxdb&lt;/h3&gt;
+
+&lt;p&gt;我们将 influxdb 添加到 grafana 的数据源中，按照其&lt;a href=&#34;http://docs.grafana.org/datasources/influxdb/&#34;&gt;官方文档http://docs.grafana.org/datasources/influxdb/&lt;/a&gt;操作起来也方便。&lt;/p&gt;
+
+&lt;h3 id=&#34;图形展现:9d3466cfc8ab63c666c05dcaaea0b79f&#34;&gt;图形展现&lt;/h3&gt;
+
+&lt;p&gt;在这里我耗了好久才搞明白怎么通过图形方式将 influxdb 的数据在 grafana web中展现出来。请按照下图中操作即可。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/grafana/1.png&#34; alt=&#34;&#34; /&gt;
+&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/grafana/2.png&#34; alt=&#34;&#34; /&gt;
+&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/grafana/3.png&#34; alt=&#34;&#34; /&gt;
+&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/grafana/4.png&#34; alt=&#34;&#34; /&gt;
+&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/grafana/5.png&#34; alt=&#34;&#34; /&gt;
+&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/grafana/6.png&#34; alt=&#34;&#34; /&gt;&lt;/p&gt;
+
+&lt;p&gt;更多功能还有待发掘。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考:9d3466cfc8ab63c666c05dcaaea0b79f&#34;&gt;参考&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.grafana.org/datasources/influxdb/&#34;&gt;grafana官方文档&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://docs.influxdata.com/influxdb/v0.9/introduction/getting_started/&#34;&gt;influxdb官方文档&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://download.csdn.net/detail/shuijinglei1988/9113655&#34;&gt;Grafana的入门级使用-自制教程-结合InfluxDB使用&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>源码阅读-悟空搜索引擎</title>
+      <link>http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/</link>
+      <pubDate>Tue, 02 Feb 2016 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/</guid>
+      <description>
+
+&lt;h2 id=&#34;一个最简单的例子:89e0d5dad305327940f268393030b521&#34;&gt;一个最简单的例子&lt;/h2&gt;
+
+&lt;p&gt;我们还是从一个最简单的示例代码开始：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;github.com/huichen/wukong/engine&amp;quot;
+	&amp;quot;github.com/huichen/wukong/types&amp;quot;
+	&amp;quot;log&amp;quot;
+)
+
+var (
+// searcher是协程安全的
+	searcher = engine.Engine{}
+)
+
+func main() {
+	// 初始化
+	searcher.Init(types.EngineInitOptions{
+		SegmenterDictionaries: &amp;quot;./data/dictionary.txt&amp;quot;})
+	defer searcher.Close()
+
+	// 将文档加入索引
+	searcher.IndexDocument(0, types.DocumentIndexData{Content: &amp;quot;此次百度收购将成中国互联网最大并购&amp;quot;})
+	searcher.IndexDocument(1, types.DocumentIndexData{Content: &amp;quot;百度宣布拟全资收购91无线业务&amp;quot;})
+	searcher.IndexDocument(2, types.DocumentIndexData{Content: &amp;quot;百度是中国最大的搜索引擎&amp;quot;})
+
+	// 等待索引刷新完毕
+	searcher.FlushIndex()
+
+	// 搜索输出格式见types.SearchResponse结构体
+	res := searcher.Search(types.SearchRequest{Text:&amp;quot;百度中国&amp;quot;})
+	log.Printf(&amp;quot;num=%d &amp;quot;, res.NumDocs)
+	for _, d := range res.Docs {
+		log.Printf(&amp;quot;docId=%d&amp;quot;, d.DocId)
+		log.Print(&amp;quot;\tscore:&amp;quot;, d.Scores)
+		log.Print(&amp;quot;\tTokenLocations:&amp;quot;, d.TokenLocations)
+		log.Print(&amp;quot;\tTokenSnippetLocations:&amp;quot;, d.TokenSnippetLocations)
+	}
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;悟空搜索引擎不是一个完整的搜索引擎，我们可以把它当做一个搜索引擎基础库来使用。上面的示例代码是一个最简单的例子，展示了如何使用这个库，非常简单，三步即可完成：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;初始化引擎： &lt;code&gt;searcher.Init&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;将文档加入索引列表中： &lt;code&gt;searcher.IndexDocument&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;执行搜索任务：&lt;code&gt;searcher.Search&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&#34;悟空搜索引擎内部整体框架图:89e0d5dad305327940f268393030b521&#34;&gt;悟空搜索引擎内部整体框架图&lt;/h2&gt;
+
+&lt;p&gt;引擎中处理用户请求、分词、索引和排序分别由不同的协程（goroutines）完成。&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;主协程，用于收发用户请求&lt;/li&gt;
+&lt;li&gt;分词器（segmenter）协程，负责分词&lt;/li&gt;
+&lt;li&gt;索引器（indexer）协程，负责建立和查找索引表&lt;/li&gt;
+&lt;li&gt;排序器（ranker）协程，负责对文档评分排序&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/wukong-framework.png&#34; alt=&#34;&#34; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;引擎初始化过程:89e0d5dad305327940f268393030b521&#34;&gt;引擎初始化过程&lt;/h2&gt;
+
+&lt;p&gt;从上面最简单的那个例子可以看出，我们所有的操作都是基于&lt;code&gt;searcher&lt;/code&gt;对象（engine.Engine类型），初始化引擎、将文档加入索引列表中、Flush索引列表、执行搜索任务。下面我们详细分析一下初始化过程：&lt;/p&gt;
+
+&lt;h4 id=&#34;加载分词词典:89e0d5dad305327940f268393030b521&#34;&gt;加载分词词典&lt;/h4&gt;
+
+&lt;p&gt;有一个参数&lt;code&gt;NotUsingSegmenter&lt;/code&gt;可以控制是否加载分词词典。小小吐槽一下：这里没有使用正语义，导致我脑袋需要非非转换，(⊙o⊙)… ，我相信如果使用&lt;code&gt;UsingSegmenter&lt;/code&gt;参数的话，应该更好理解一点。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	if !options.NotUsingSegmenter {
+		// 载入分词器词典
+		engine.segmenter.LoadDictionary(options.SegmenterDictionaries)
+
+		// 初始化停用词
+		engine.stopTokens.Init(options.StopTokenFile)
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;分词词典的内部加载过程，可以详细参考 &lt;code&gt;https://github.com/huichen/sego&lt;/code&gt; 这个项目，这个可以单独来分析，在这里就不在展开说了。&lt;/p&gt;
+
+&lt;h4 id=&#34;初始化索引器和排序器:89e0d5dad305327940f268393030b521&#34;&gt;初始化索引器和排序器&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	for shard := 0; shard &amp;lt; options.NumShards; shard++ {
+		engine.indexers = append(engine.indexers, core.Indexer{})
+		engine.indexers[shard].Init(*options.IndexerInitOptions)
+
+		engine.rankers = append(engine.rankers, core.Ranker{})
+		engine.rankers[shard].Init()
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;code&gt;options.NumShards&lt;/code&gt; 参数可以设置&lt;code&gt;shard&lt;/code&gt;(分片，项目作者称之为裂分)个数，根据&lt;code&gt;shard&lt;/code&gt;个数来初始化索引器(Indexer)、排序器(Rander)的个数。这里是为了方便并行处理，每一个&lt;code&gt;shard&lt;/code&gt;都有一个索引器(Indexer)和排序器(Rander)，并提前初始化好。&lt;/p&gt;
+
+&lt;h4 id=&#34;初始化分词器通道:89e0d5dad305327940f268393030b521&#34;&gt;初始化分词器通道&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	engine.segmenterChannel = make(
+		chan segmenterRequest, options.NumSegmenterThreads)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;初始化索引器通道:89e0d5dad305327940f268393030b521&#34;&gt;初始化索引器通道&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	engine.indexerAddDocumentChannels = make(
+		[]chan indexerAddDocumentRequest, options.NumShards)
+	engine.indexerRemoveDocChannels = make(
+		[]chan indexerRemoveDocRequest, options.NumShards)
+	engine.indexerLookupChannels = make(
+		[]chan indexerLookupRequest, options.NumShards)
+	for shard := 0; shard &amp;lt; options.NumShards; shard++ {
+		engine.indexerAddDocumentChannels[shard] = make(
+			chan indexerAddDocumentRequest,
+			options.IndexerBufferLength)
+		engine.indexerRemoveDocChannels[shard] = make(
+			chan indexerRemoveDocRequest,
+			options.IndexerBufferLength)
+		engine.indexerLookupChannels[shard] = make(
+			chan indexerLookupRequest,
+			options.IndexerBufferLength)
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;从这里可以看出索引器(Indexer)有三个功能：将一个文档添加到索引中、将一个文档从索引中移除、从索引中查找一个文档。每一个&lt;code&gt;shard&lt;/code&gt;都有独立的&lt;code&gt;channel&lt;/code&gt;，互不冲突。&lt;/p&gt;
+
+&lt;h4 id=&#34;初始化排序器通道:89e0d5dad305327940f268393030b521&#34;&gt;初始化排序器通道&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	engine.rankerAddDocChannels = make(
+		[]chan rankerAddDocRequest, options.NumShards)
+	engine.rankerRankChannels = make(
+		[]chan rankerRankRequest, options.NumShards)
+	engine.rankerRemoveDocChannels = make(
+		[]chan rankerRemoveDocRequest, options.NumShards)
+	for shard := 0; shard &amp;lt; options.NumShards; shard++ {
+		engine.rankerAddDocChannels[shard] = make(
+			chan rankerAddDocRequest,
+			options.RankerBufferLength)
+		engine.rankerRankChannels[shard] = make(
+			chan rankerRankRequest,
+			options.RankerBufferLength)
+		engine.rankerRemoveDocChannels[shard] = make(
+			chan rankerRemoveDocRequest,
+			options.RankerBufferLength)
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;与上面类似，从这里可以看出排序器(Rander)有三个功能：将一个文档添加到排序器中、在排序器中进行排序、将一个文档从排序器中移除。每一个&lt;code&gt;shard&lt;/code&gt;都有独立的&lt;code&gt;channel&lt;/code&gt;，互不冲突。&lt;/p&gt;
+
+&lt;h4 id=&#34;初始化持久化存储通道:89e0d5dad305327940f268393030b521&#34;&gt;初始化持久化存储通道&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	if engine.initOptions.UsePersistentStorage {
+		engine.persistentStorageIndexDocumentChannels =
+			make([]chan persistentStorageIndexDocumentRequest,
+				engine.initOptions.PersistentStorageShards)
+		for shard := 0; shard &amp;lt; engine.initOptions.PersistentStorageShards; shard++ {
+			engine.persistentStorageIndexDocumentChannels[shard] = make(
+				chan persistentStorageIndexDocumentRequest)
+		}
+		engine.persistentStorageInitChannel = make(
+			chan bool, engine.initOptions.PersistentStorageShards)
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;注意：&lt;code&gt;PersistentStorageShards&lt;/code&gt;持久化存储的分片数目是独立参数控制的。&lt;/p&gt;
+
+&lt;h4 id=&#34;启动各个功能协程goroutine:89e0d5dad305327940f268393030b521&#34;&gt;启动各个功能协程goroutine&lt;/h4&gt;
+
+&lt;ol&gt;
+&lt;li&gt;启动分词器协程&lt;/li&gt;
+&lt;li&gt;启动索引器和排序器协程&lt;/li&gt;
+&lt;li&gt;启动持久化存储工作协程&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;至此，所有初始化工作完毕。&lt;/p&gt;
+
+&lt;h2 id=&#34;索引过程分析:89e0d5dad305327940f268393030b521&#34;&gt;索引过程分析&lt;/h2&gt;
+
+&lt;p&gt;下面我们来分析索引过程。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;// 将文档加入索引
+//
+// 输入参数：
+// 	docId	标识文档编号，必须唯一
+//	data	见DocumentIndexData注释
+//
+// 注意：
+//      1. 这个函数是线程安全的，请尽可能并发调用以提高索引速度
+// 	2. 这个函数调用是非同步的，也就是说在函数返回时有可能文档还没有加入索引中，因此
+//         如果立刻调用Search可能无法查询到这个文档。强制刷新索引请调用FlushIndex函数。
+func (engine *Engine) IndexDocument(docId uint64, data types.DocumentIndexData) {
+	engine.internalIndexDocument(docId, data)
+
+	hash := murmur.Murmur3([]byte(fmt.Sprint(&amp;quot;%d&amp;quot;, docId))) % uint32(engine.initOptions.PersistentStorageShards)
+	if engine.initOptions.UsePersistentStorage {
+		engine.persistentStorageIndexDocumentChannels[hash] &amp;lt;- persistentStorageIndexDocumentRequest{docId: docId, data: data}
+	}
+}
+
+func (engine *Engine) internalIndexDocument(docId uint64, data types.DocumentIndexData) {
+	if !engine.initialized {
+		log.Fatal(&amp;quot;必须先初始化引擎&amp;quot;)
+	}
+
+	atomic.AddUint64(&amp;amp;engine.numIndexingRequests, 1)
+	hash := murmur.Murmur3([]byte(fmt.Sprint(&amp;quot;%d%s&amp;quot;, docId, data.Content)))
+	engine.segmenterChannel &amp;lt;- segmenterRequest{
+		docId: docId, hash: hash, data: data}
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;这里需要注意的是，docId参数需要调用者从外部传入，而不是在内部自己创建，这给搜索引擎的实现者更大的自由。
+将文档交给分词器处理，然后根据murmur3计算的hash值模&lt;code&gt;PersistentStorageShards&lt;/code&gt;，选择合适的&lt;code&gt;shard&lt;/code&gt;写入持久化存储中。&lt;/p&gt;
+
+&lt;h3 id=&#34;索引过程分析-分词协程处理过程:89e0d5dad305327940f268393030b521&#34;&gt;索引过程分析：分词协程处理过程&lt;/h3&gt;
+
+&lt;p&gt;分词器协程的逻辑代码在这里：&lt;code&gt;segmenter_worker.go:func (engine *Engine) segmenterWorker()&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;分词器协程的逻辑是一个死循环，不停的从&lt;code&gt;channel engine.segmenterChannel&lt;/code&gt;中读取数据，针对每一次读取的数据：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;计算&lt;code&gt;shard&lt;/code&gt;号&lt;/li&gt;
+&lt;li&gt;将文档分词&lt;/li&gt;
+&lt;li&gt;根据分词结果，构造&lt;code&gt;indexerAddDocumentRequest&lt;/code&gt; 和 &lt;code&gt;rankerAddDocRequest&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;将&lt;code&gt;indexerAddDocumentRequest&lt;/code&gt;投递到&lt;code&gt;channel engine.indexerAddDocumentChannels[shard]&lt;/code&gt;中&lt;/li&gt;
+&lt;li&gt;将&lt;code&gt;rankerAddDocRequest&lt;/code&gt;投递到&lt;code&gt;channel engine.rankerAddDocChannels[shard]&lt;/code&gt;中&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;补充一句：这里&lt;code&gt;shard&lt;/code&gt;号的计算过程如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;// 从文本hash得到要分配到的shard
+func (engine *Engine) getShard(hash uint32) int {
+	return int(hash - hash/uint32(engine.initOptions.NumShards)*uint32(engine.initOptions.NumShards))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;为什么不是直接取模呢？&lt;/p&gt;
+
+&lt;h3 id=&#34;索引过程分析-索引器协程处理过程:89e0d5dad305327940f268393030b521&#34;&gt;索引过程分析：索引器协程处理过程&lt;/h3&gt;
+
+&lt;p&gt;首先介绍一下倒排索引表，这是搜索引擎的核心数据结构。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;// 索引器
+type Indexer struct {
+	// 从搜索键到文档列表的反向索引
+	// 加了读写锁以保证读写安全
+	tableLock struct {
+		sync.RWMutex
+		table map[string]*KeywordIndices
+		docs  map[uint64]bool
+	}
+
+	initOptions types.IndexerInitOptions
+	initialized bool
+
+	// 这实际上是总文档数的一个近似
+	numDocuments uint64
+
+	// 所有被索引文本的总关键词数
+	totalTokenLength float32
+
+	// 每个文档的关键词长度
+	docTokenLengths map[uint64]float32
+}
+
+// 反向索引表的一行，收集了一个搜索键出现的所有文档，按照DocId从小到大排序。
+type KeywordIndices struct {
+	// 下面的切片是否为空，取决于初始化时IndexType的值
+	docIds      []uint64  // 全部类型都有
+	frequencies []float32 // IndexType == FrequenciesIndex
+	locations   [][]int   // IndexType == LocationsIndex
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;code&gt;table map[string]*KeywordIndices&lt;/code&gt;这个是核心：一个关键词，对应一个&lt;code&gt;KeywordIndices&lt;/code&gt;结构。该结构的&lt;code&gt;docIds&lt;/code&gt;字段记录了所有包含这个关键词的文档id。
+如果 IndexType == FrequenciesIndex ，则同时记录这个关键词在该文档中出现次数。
+如果 IndexType == LocationsIndex ，则同时记录这个关键词在该文档中出现的所有位置的起始偏移。&lt;/p&gt;
+
+&lt;p&gt;下面是索引的主函数代码：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;func (engine *Engine) indexerAddDocumentWorker(shard int) {
+	for {
+		request := &amp;lt;-engine.indexerAddDocumentChannels[shard]
+		engine.indexers[shard].AddDocument(request.document)
+		atomic.AddUint64(&amp;amp;engine.numTokenIndexAdded,
+			uint64(len(request.document.Keywords)))
+		atomic.AddUint64(&amp;amp;engine.numDocumentsIndexed, 1)
+	}
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;其主要逻辑又封装在&lt;code&gt;func (indexer *Indexer) AddDocument(document *types.DocumentIndex)&lt;/code&gt;函数中实现。其逻辑如下：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;将倒排索引表加锁&lt;/li&gt;
+&lt;li&gt;更新文档关键词的长度加在一起的总和&lt;/li&gt;
+&lt;li&gt;查找关键词在倒排索引表中是否存在&lt;/li&gt;
+&lt;li&gt;如果不存在，则直接加入到&lt;code&gt;table map[string]*KeywordIndices&lt;/code&gt;中&lt;/li&gt;
+&lt;li&gt;如果存在&lt;code&gt;KeywordIndices&lt;/code&gt;，则使用二分查找该关键词对应的docId是否已经在&lt;code&gt;KeywordIndices.docIds&lt;/code&gt;中存在。分两种情况：
+1) docId存在，则更新原有的数据结构。
+2) docId不存在，则插入到&lt;code&gt;KeywordIndices.docIds&lt;/code&gt;数组中，同时保持升序排列。&lt;/li&gt;
+&lt;li&gt;更新索引过的文章总数&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&#34;索引过程分析-排序器协程处理过程:89e0d5dad305327940f268393030b521&#34;&gt;索引过程分析：排序器协程处理过程&lt;/h3&gt;
+
+&lt;p&gt;在新索引文档的过程，排序器的主逻辑如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;func (engine *Engine) rankerAddDocWorker(shard int) {
+	for {
+		request := &amp;lt;-engine.rankerAddDocChannels[shard]
+		engine.rankers[shard].AddDoc(request.docId, request.fields)
+	}
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;进而调用下面的函数&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;// 给某个文档添加评分字段
+func (ranker *Ranker) AddDoc(docId uint64, fields interface{}) {
+	if ranker.initialized == false {
+		log.Fatal(&amp;quot;排序器尚未初始化&amp;quot;)
+	}
+
+	ranker.lock.Lock()
+	ranker.lock.fields[docId] = fields
+	ranker.lock.docs[docId] = true
+	ranker.lock.Unlock()
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上述函数非常简单，只是将应用层自定义的数据加入到ranker中。&lt;/p&gt;
+
+&lt;p&gt;至此索引过程就完成了。简单来讲就是下面两个过程：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;将文档分词，得到一堆关键词&lt;/li&gt;
+&lt;li&gt;将 关键词-&amp;gt;docId 的对应关系加入到全局的map中(实际上是分了多个shard)&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&#34;搜索过程分析:89e0d5dad305327940f268393030b521&#34;&gt;搜索过程分析&lt;/h2&gt;
+
+&lt;p&gt;下面我们来分析一下搜索的过程。首先构造一个&lt;code&gt;SearchRequest&lt;/code&gt;对象。一般情况下只需提供&lt;code&gt;SearchRequest.Text&lt;/code&gt;即可。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;type SearchRequest struct {
+	// 搜索的短语（必须是UTF-8格式），会被分词
+	// 当值为空字符串时关键词会从下面的Tokens读入
+	Text string
+
+	// 关键词（必须是UTF-8格式），当Text不为空时优先使用Text
+	// 通常你不需要自己指定关键词，除非你运行自己的分词程序
+	Tokens []string
+
+	// 文档标签（必须是UTF-8格式），标签不存在文档文本中，但也属于搜索键的一种
+	Labels []string
+
+	// 当不为nil时，仅从这些DocIds包含的键中搜索（忽略值）
+	DocIds map[uint64]bool
+
+	// 排序选项
+	RankOptions *RankOptions
+
+	// 超时，单位毫秒（千分之一秒）。此值小于等于零时不设超时。
+	// 搜索超时的情况下仍有可能返回部分排序结果。
+	Timeout int
+
+	// 设为true时仅统计搜索到的文档个数，不返回具体的文档
+	CountDocsOnly bool
+
+	// 不排序，对于可在引擎外部（比如客户端）排序情况适用
+	// 对返回文档很多的情况打开此选项可以有效节省时间
+	Orderless bool
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;从本文一开始那段示例代码的搜索语句读起：&lt;code&gt;searcher.Search(types.SearchRequest{Text:&amp;quot;百度中国&amp;quot;})&lt;/code&gt;。进入到 Search 函数内部，其逻辑如下：&lt;/p&gt;
+
+&lt;h3 id=&#34;设置一些搜索选项:89e0d5dad305327940f268393030b521&#34;&gt;设置一些搜索选项&lt;/h3&gt;
+
+&lt;p&gt;例如排序选项&lt;code&gt;RankOptions&lt;/code&gt;, 分数计算条件&lt;code&gt;ScoringCriteria&lt;/code&gt;等等&lt;/p&gt;
+
+&lt;h3 id=&#34;将搜索词进行分词:89e0d5dad305327940f268393030b521&#34;&gt;将搜索词进行分词&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	// 收集关键词
+	tokens := []string{}
+	if request.Text != &amp;quot;&amp;quot; {
+		querySegments := engine.segmenter.Segment([]byte(request.Text))
+		for _, s := range querySegments {
+			token := s.Token().Text()
+			if !engine.stopTokens.IsStopToken(token) {
+				tokens = append(tokens, s.Token().Text())
+			}
+		}
+	} else {
+		for _, t := range request.Tokens {
+			tokens = append(tokens, t)
+		}
+	}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;这里的&amp;rdquo;百度中国&amp;rdquo;会分词得到两个词：&lt;code&gt;百度&lt;/code&gt; 和&lt;code&gt;中国&lt;/code&gt;&lt;/p&gt;
+
+&lt;h3 id=&#34;向索引器发送查找请求:89e0d5dad305327940f268393030b521&#34;&gt;向索引器发送查找请求&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	// 建立排序器返回的通信通道
+	rankerReturnChannel := make(
+		chan rankerReturnRequest, engine.initOptions.NumShards)
+
+	// 生成查找请求
+	lookupRequest := indexerLookupRequest{
+		countDocsOnly:       request.CountDocsOnly,
+		tokens:              tokens,
+		labels:              request.Labels,
+		docIds:              request.DocIds,
+		options:             rankOptions,
+		rankerReturnChannel: rankerReturnChannel,
+		orderless:           request.Orderless,
+	}
+
+	// 向索引器发送查找请求
+	for shard := 0; shard &amp;lt; engine.initOptions.NumShards; shard++ {
+		engine.indexerLookupChannels[shard] &amp;lt;- lookupRequest
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;这里是否可以进行优化？ 1) 只向特定的shard分发请求，避免无谓的indexer查找过程。2) &lt;code&gt;rankerReturnChannel&lt;/code&gt;是否不用每次都创建新的？&lt;/p&gt;
+
+&lt;h3 id=&#34;读取索引器的返回结果然后排序:89e0d5dad305327940f268393030b521&#34;&gt;读取索引器的返回结果然后排序&lt;/h3&gt;
+
+&lt;p&gt;上面已经建立了结果的返回通道&lt;code&gt;rankerReturnChannel&lt;/code&gt;，直接从个&lt;code&gt;channel&lt;/code&gt;中读取返回数据，并加入到数组&lt;code&gt;rankOutput&lt;/code&gt;中。
+注意，如果设置了超时，就在超时之前能读取多少就读多少。
+然后调用排序算法进行排序。排序算法直接调用Golang自带的&lt;code&gt;sort&lt;/code&gt;包的排序算法。&lt;/p&gt;
+
+&lt;p&gt;下面我们深入到索引器，看看索引器是如何进行搜索的。其核心代码在这里&lt;code&gt;func (engine *Engine) indexerLookupWorker(shard int)&lt;/code&gt;，它的主逻辑是一个死循环，不断的从&lt;code&gt;engine.indexerLookupChannels[shard]&lt;/code&gt;读取搜索请求。&lt;/p&gt;
+
+&lt;p&gt;针对每一个搜索请求，会将请求分发到索引器去，调用&lt;code&gt;func (indexer *Indexer) Lookup(tokens []string, labels []string, docIds map[uint64]bool, countDocsOnly bool) (docs []types.IndexedDocument, numDocs int)&lt;/code&gt;方法。其主要逻辑如下：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;将分词和标签合并在一起进行搜索&lt;/li&gt;
+&lt;li&gt;合并搜索到的docId，并进行初步排序，将docId大的排在前面(实际上是认为docId越大，时间越近，时效性越好)&lt;/li&gt;
+&lt;li&gt;然后进行排序，BM25算法&lt;/li&gt;
+&lt;li&gt;最后返回数据&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&#34;参考文献:89e0d5dad305327940f268393030b521&#34;&gt;参考文献&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/huichen/wukong&#34;&gt;悟空搜索引擎项目源码：https://github.com/huichen/wukong&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/huichen/wukong/blob/master/docs/codelab.md&#34;&gt;悟空引擎入门教程&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://ayende.com/blog/171745/code-reading-wukong-full-text-search-engine&#34;&gt;Code reading: Wukong full-text search engine&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>应用双缓冲技术完美解决资源数据优雅无损的热加载问题</title>
+      <link>http://blog.codeg.cn/2016/01/27/double-buffering/</link>
+      <pubDate>Wed, 27 Jan 2016 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2016/01/27/double-buffering/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:dbe09d7cae1f1403ca8285fad9fa9bcc&#34;&gt;简介&lt;/h2&gt;
+
+&lt;p&gt;在一个网络服务器不间断运行过程中，有一些资源数据需要实时更新，例如需要及时更新一份白名单列表，怎么做才能做到优雅无损的更新到服务的进程空间内？这里我们提出一种叫“双缓冲”的技术来解决这种问题。&lt;/p&gt;
+
+&lt;p&gt;这里的双缓冲技术是借鉴了计算机屏幕绘图领域的概念。双缓冲技术绘图即在内存中创建一个与屏幕绘图区域一致的对象，先将图形绘制到内存中的这个对象上，再一次性将这个对象上的图形拷贝到屏幕上，这样能大大加快绘图的速度。&lt;/p&gt;
+
+&lt;h3 id=&#34;问题抽象:dbe09d7cae1f1403ca8285fad9fa9bcc&#34;&gt;问题抽象&lt;/h3&gt;
+
+&lt;p&gt;假设我们有一个查询服务，为了方便描述，我们将数据加密传输等一些不必要的细节都省去后，请求报文可以抽象成两个参数：一个是id，用来唯一标识一台设备（例如手机或电脑）；另一个查询主体query。服务端业务逻辑是通过query查询数据库/NoSQL等数据引擎然后返回相应的数据，同时记录一条请求日志。&lt;/p&gt;
+
+&lt;p&gt;用Golang来实现这个逻辑如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;net/http&amp;quot;
+	&amp;quot;log&amp;quot;
+	&amp;quot;os&amp;quot;
+	&amp;quot;fmt&amp;quot;
+)
+
+func Query(r *http.Request) string {
+	id := r.FormValue(&amp;quot;id&amp;quot;)
+	query := r.FormValue(&amp;quot;query&amp;quot;)
+
+	//参数合法性检查
+
+	//具体的业务逻辑，查询数据库/NoSQL等数据引擎，然后做逻辑计算，然后合并结果
+	//这里简单抽象，直接返回欢迎语
+	result := fmt.Sprintf(&amp;quot;hello, %v&amp;quot;, id)
+
+	// 记录一条查询日志，用于离线统计和分析
+	log.Printf(&amp;quot;&amp;lt;id=%v&amp;gt;&amp;lt;query=%v&amp;gt;&amp;lt;result=%v&amp;gt;&amp;lt;ip=%v&amp;gt;&amp;quot;, id, query, result, r.RemoteAddr)
+
+	return result
+}
+
+func Handler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	result := Query(r)
+	w.Write([]byte(result))
+}
+
+func main() {
+	http.HandleFunc(&amp;quot;/q&amp;quot;, Handler)
+	hostname, _ := os.Hostname()
+	log.Printf(&amp;quot;start http://%s:8091/q&amp;quot;, hostname)
+	log.Fatal(http.ListenAndServe(&amp;quot;:8091&amp;quot;, nil))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;服务上线一段时间后，通过日志分析发现有一些id发起的请求异常，每天的请求量远远高于其他id，我们有理由怀疑这些请求是竞争对手在抓我们的数据。这个时候就开始进入攻防阶段了。&lt;/p&gt;
+
+&lt;p&gt;有几种攻防策略可供选择：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;直接封IP，这种策略有可能会误杀一些正常用户。&lt;/li&gt;
+&lt;li&gt;将id加入黑名单&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;假设我们将策略1放到前端接入服务处(例如Nginx)进行拦截，策略2在我们自己的业务逻辑中实现，即在Query函数中加入对id的判断即可。现在的完整代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;net/http&amp;quot;
+	&amp;quot;log&amp;quot;
+	&amp;quot;os&amp;quot;
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;io/ioutil&amp;quot;
+	&amp;quot;bytes&amp;quot;
+	&amp;quot;strings&amp;quot;
+	&amp;quot;io&amp;quot;
+)
+
+var blackIDs map[string]int
+func LoadBlackIDs(filepath string) error {
+	// 加载黑名单列表文件，每行一个
+	b, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return err
+	}
+	r := bytes.NewBuffer(b)
+	for {
+		id, err := r.ReadString(&#39;\n&#39;)
+		if err == io.EOF || err == nil {
+			id = strings.TrimSpace(id)
+			if len(id) &amp;gt; 0 {
+				blackIDs[id] = 1
+			}
+		}
+
+		if err != nil {
+			break
+		}
+	}
+
+	return nil
+}
+
+func IsBlackID(id string) bool {
+	_, exist := blackIDs[id]
+	return exist
+}
+
+func Query(r *http.Request) (string, error) {
+	id := r.FormValue(&amp;quot;id&amp;quot;)
+	query := r.FormValue(&amp;quot;query&amp;quot;)
+
+	//参数合法性检查
+
+	if IsBlackID(id) {
+		return &amp;quot;ERROR&amp;quot;, fmt.Errorf(&amp;quot;ERROR id&amp;quot;)
+	}
+
+	//具体的业务逻辑，查询数据库/NoSQL等数据引擎，然后做逻辑计算，然后合并结果
+	//这里简单抽象，直接返回欢迎语
+	result := fmt.Sprintf(&amp;quot;hello, %v&amp;quot;, id)
+
+	// 记录一条查询日志，用于离线统计和分析
+	log.Printf(&amp;quot;&amp;lt;id=%v&amp;gt;&amp;lt;query=%v&amp;gt;&amp;lt;result=%v&amp;gt;&amp;lt;ip=%v&amp;gt;&amp;quot;, id, query, result, r.RemoteAddr)
+
+	return result, nil
+}
+
+func Handler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	result, err := Query(r)
+	if err == nil {
+		w.Write([]byte(result))
+	} else {
+		w.WriteHeader(403)
+		w.Write([]byte(result))
+	}
+}
+
+func main() {
+	blackIDs = make(map[string]int)
+	if len(os.Args) == 2 {
+		err := LoadBlackIDs(os.Args[1])
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	http.HandleFunc(&amp;quot;/q&amp;quot;, Handler)
+	hostname, _ := os.Hostname()
+	log.Printf(&amp;quot;start http://%s:8091/q&amp;quot;, hostname)
+	log.Fatal(http.ListenAndServe(&amp;quot;:8091&amp;quot;, nil))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;经过上述努力，终于将一些异常请求屏蔽掉了，一看时间都凌晨了，恩，好好回家碎个叫，累死哥了。&lt;/p&gt;
+
+&lt;h3 id=&#34;解决思路:dbe09d7cae1f1403ca8285fad9fa9bcc&#34;&gt;解决思路&lt;/h3&gt;
+
+&lt;p&gt;又过了一些日子，产品妹子还是找过来了，说我们的最新数据又被竞争对手抓走了，肿么回事？
+我们只能做一个离线流程将恶意id实时过滤出来，然后及时反馈到在线服务中去，
+一开始想到可以通过重启进程的方式来加载这份black_id.txt，这就要求我们的程序对reload要做到足够优雅，
+例如不能丢请求、reload过程中要足够平滑，短时间做到这一点还有些困难。另外，整个程序reload过程所消耗的CPU/IO资源较多，例如一些不需更新的资源也需要reload。
+如果能做到按需加载就更好了，即：哪个资源有变化，我们就只加载那个资源。
+然后我们就想到了本文所提到的双缓冲技术。&lt;/p&gt;
+
+&lt;p&gt;这里的双缓冲技术是指对black_id.txt文件的加载过程是在后台独立加载，等加载完毕之后，再与当前正在使用的对象直接交换一下，即可完成新文件的加载。
+这里有几个细节需要讨论一下：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;black_id.txt在内存中是一个map结构，有人说，等有更新时，直接将增量更新进map即可，这就需要对该map结构上锁，且所有用到的地方都加锁，锁粒度有点粗&lt;/li&gt;
+&lt;li&gt;一个简单直接的办法是对black_id.txt整体重新生成一个新的map结构，使用的时候直接拿到这个map的指针替换掉原来的指针即可&lt;/li&gt;
+&lt;li&gt;新老替换后，老的资源什么释放？在Golang中，一般情况下可以通过其自身的GC来释放即可。但有时候，有一些资源是需要我们自己主动释放的，GC这一点做不到，例如通过CGO方式嵌入进来的C扩展对象的释放工作。这里我们通过引用计数技术来解决。&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&#34;双缓冲技术golang实现:dbe09d7cae1f1403ca8285fad9fa9bcc&#34;&gt;双缓冲技术Golang实现&lt;/h3&gt;
+
+&lt;p&gt;直接上代码。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;import (
+	&amp;quot;sync&amp;quot;
+	&amp;quot;io/ioutil&amp;quot;
+	&amp;quot;crypto/md5&amp;quot;
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;time&amp;quot;
+	&amp;quot;sync/atomic&amp;quot;
+)
+
+type DoubleBufferingTarget interface {
+	Initialize(conf string) bool // 初始化，继承类可以在此做一些初始化的工作
+	Close() // 继承类如果在Initialize函数中申请了一些资源，可以在这里将这些资源进行回收
+}
+
+type DoubleBufferingTargetCreator func() DoubleBufferingTarget
+
+type DoubleBufferingTargetRef struct {
+	Target DoubleBufferingTarget
+	ref    *int32
+}
+
+type DoubleBuffering struct {
+	creator         DoubleBufferingTargetCreator
+
+	mutex           sync.Mutex
+	refTarget       DoubleBufferingTargetRef
+
+	reloadTimestamp int64
+	md5h            string
+}
+
+
+func newDoubleBuffering(f DoubleBufferingTargetCreator) *DoubleBuffering {
+	d := new(DoubleBuffering)
+	d.creator = f
+	d.reloadTimestamp = 0
+	return d
+}
+
+func (d *DoubleBuffering) reload(conf string) bool {
+	t := d.creator()
+	if t.Initialize(conf) == false {
+		return false
+	}
+
+	content, err := ioutil.ReadFile(conf)
+	if err != nil {
+		content = []byte(conf)
+	}
+	d.md5h = fmt.Sprint(&amp;quot;%x&amp;quot;, md5.Sum(content))
+	d.reloadTimestamp = time.Now().Unix()
+
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.refTarget.Release() // 将老对象释放掉
+
+	d.refTarget.Target = t
+	d.refTarget.ref = new(int32)
+	*d.refTarget.ref = 1 // 初始设置为1，由DoubleBuffering代为管理
+
+	return true
+}
+
+// ReloadTimestamp return the latest timestamp when the DoubleBuffering reloaded at the last time
+func (d *DoubleBuffering) ReloadTimestamp() int64 {
+	return d.reloadTimestamp
+}
+
+// LatestConfMD5 return the latest config&#39;s md5
+func (d *DoubleBuffering) LatestConfMD5() string {
+	return d.md5h
+}
+
+// Get return the target this DoubleBuffering manipulated.
+// You should call DoubleBufferingTargetRef.Release() function after you have used it.
+func (d *DoubleBuffering) Get() DoubleBufferingTargetRef {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	atomic.AddInt32(d.refTarget.ref, 1)
+	return d.refTarget
+}
+
+func (d DoubleBufferingTargetRef) Release() {
+	if d.ref != nil &amp;amp;&amp;amp; atomic.AddInt32(d.ref, -1) == 0 {
+		d.Target.Close()
+	}
+}
+
+func (d DoubleBufferingTargetRef) Ref() int32 {
+	if d.ref != nil {
+		return *d.ref
+	}
+
+	return 0
+}
+
+type DoubleBufferingMap map[string/*name*/]*DoubleBuffering
+type DoubleBufferingManager struct {
+	targets DoubleBufferingMap
+	mutex sync.Mutex
+}
+
+func NewDoubleBufferingManager() *DoubleBufferingManager {
+	m := new(DoubleBufferingManager)
+	m.targets = make(DoubleBufferingMap)
+	return m
+}
+
+func (m *DoubleBufferingManager) Add(name string, conf string, f DoubleBufferingTargetCreator) bool {
+	d := newDoubleBuffering(f)
+	if d.reload(conf) {
+		m.targets[name] = d
+		return true
+	}
+
+	return false
+}
+
+func (m *DoubleBufferingManager) Get(name string) *DoubleBuffering {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if t, ok := m.targets[name]; ok {
+		return t
+	}
+
+	//panic(&amp;quot;cannot find this kind of DoubleBuffering&amp;quot;)
+	return nil
+}
+
+func (m *DoubleBufferingManager) Reload(name, conf string) bool {
+	d := m.Get(name)
+	if d == nil {
+		return false
+	}
+
+	return d.reload(conf)
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;使用doublebuffering改造最开始那个抽象问题:dbe09d7cae1f1403ca8285fad9fa9bcc&#34;&gt;使用DoubleBuffering改造最开始那个抽象问题&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;net/http&amp;quot;
+	&amp;quot;log&amp;quot;
+	&amp;quot;os&amp;quot;
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;io/ioutil&amp;quot;
+	&amp;quot;bytes&amp;quot;
+	&amp;quot;strings&amp;quot;
+	&amp;quot;io&amp;quot;
+)
+
+type BlackIDDict struct {
+	blackIDs map[string]int
+}
+
+func NewBlackIDDict() DoubleBufferingTarget {
+	d := &amp;amp;BlackIDDict{
+		blackIDs: make(map[string]int),
+	}
+	return d
+}
+
+var dbm *DoubleBufferingManager
+
+func (d *BlackIDDict) Initialize(conf string) bool {
+	filepath := conf
+
+	// 加载黑名单列表文件，每行一个
+	b, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return false
+	}
+	r := bytes.NewBuffer(b)
+	for {
+		id, err := r.ReadString(&#39;\n&#39;)
+		if err == io.EOF || err == nil {
+			id = strings.TrimSpace(id)
+			if len(id) &amp;gt; 0 {
+				d.blackIDs[id] = 1
+			}
+		}
+
+		if err != nil {
+			break
+		}
+	}
+
+	return true
+}
+
+func (d *BlackIDDict) Close() {
+	// 在这里做一些资源释放工作
+	// 当前这个例子没有资源需要我们手工释放
+}
+
+func (d *BlackIDDict) IsBlackID(id string) bool {
+	_, exist := d.blackIDs[id]
+	return exist
+}
+
+func Query(r *http.Request) (string, error) {
+	id := r.FormValue(&amp;quot;id&amp;quot;)
+	query := r.FormValue(&amp;quot;query&amp;quot;)
+
+	//TODO 参数合法性检查
+
+	d := dbm.Get(&amp;quot;black_id&amp;quot;)
+	tg := d.Get()
+	defer tg.Release()
+	dict := tg.Target.(*BlackIDDict)  // 转换为具体的Dict对象
+	if dict == nil {
+		return &amp;quot;&amp;quot;, fmt.Errorf(&amp;quot;ERROR, Convert DoubleBufferingTarget to Dict failed&amp;quot;)
+	}
+
+	if dict.IsBlackID(id) {
+		return &amp;quot;ERROR&amp;quot;, fmt.Errorf(&amp;quot;ERROR id&amp;quot;)
+	}
+
+	//具体的业务逻辑，查询数据库/NoSQL等数据引擎，然后做逻辑计算，然后合并结果
+	//这里简单抽象，直接返回欢迎语
+	result := fmt.Sprintf(&amp;quot;hello, %v&amp;quot;, id)
+
+	// 记录一条查询日志，用于离线统计和分析
+	log.Printf(&amp;quot;&amp;lt;id=%v&amp;gt;&amp;lt;query=%v&amp;gt;&amp;lt;result=%v&amp;gt;&amp;lt;ip=%v&amp;gt;&amp;quot;, id, query, result, r.RemoteAddr)
+
+	return result, nil
+}
+
+func Handler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	result, err := Query(r)
+	if err == nil {
+		w.Write([]byte(result))
+	} else {
+		w.WriteHeader(403)
+		w.Write([]byte(result))
+	}
+}
+
+func Reload(w http.ResponseWriter, r *http.Request) {
+	// 这里简化处理，直接重新加载black_id。如果有多个，可以从url参数中获取资源名称
+	if dbm.Reload(&amp;quot;black_id&amp;quot;, os.Args[1]) {
+		w.Write([]byte(&amp;quot;OK&amp;quot;))
+	} else {
+		w.Write([]byte(&amp;quot;FAILED&amp;quot;))
+	}
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		panic(&amp;quot;Not specify black_id.txt&amp;quot;)
+	}
+
+	dbm = NewDoubleBufferingManager()
+	rc := dbm.Add(&amp;quot;black_id&amp;quot;, os.Args[1], NewBlackIDDict)
+	if rc == false {
+		panic(&amp;quot;black_id initialize failed&amp;quot;)
+	}
+
+	http.HandleFunc(&amp;quot;/q&amp;quot;, Handler)
+	http.HandleFunc(&amp;quot;/admin/reload&amp;quot;, Reload) // 管理接口，用于重新加载black_id.txt。如果有多个这种资源，可以增加一些参数来说区分不同的资源
+	hostname, _ := os.Hostname()
+	log.Printf(&amp;quot;start http://%s:8091/q&amp;quot;, hostname)
+	log.Fatal(http.ListenAndServe(&amp;quot;:8091&amp;quot;, nil))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;程序启动之后，使用black_id.txt里面的id请求时，都会返回403，如果有新增的black_id，我们也加入到black_id.txt文件中，然后调用 &lt;code&gt;/admin/reload&lt;/code&gt; 接口使之生效即可。&lt;/p&gt;
+
+&lt;h3 id=&#34;c-版本实现:dbe09d7cae1f1403ca8285fad9fa9bcc&#34;&gt;C++版本实现&lt;/h3&gt;
+
+&lt;p&gt;//TODO&lt;/p&gt;
+
+&lt;h2 id=&#34;参考文献:dbe09d7cae1f1403ca8285fad9fa9bcc&#34;&gt;参考文献&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://baike.haosou.com/doc/302938-320692.html&#34;&gt;双缓冲技术介绍&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/go-doublebuffering&#34;&gt;Golang实现的示例源码在这里 https://github.com/zieckey/go-doublebuffering&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>godotenv介绍</title>
+      <link>http://blog.codeg.cn/2015/12/15/godotenv/</link>
+      <pubDate>Tue, 15 Dec 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/12/15/godotenv/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:a2f6952cdcca5db49437e97fa612c308&#34;&gt;简介&lt;/h2&gt;
+
+&lt;p&gt;&lt;code&gt;godotenv&lt;/code&gt;是ruby社区的&lt;code&gt;dotenv&lt;/code&gt;的Golang移植版本。该库会解析 &lt;strong&gt;.env&lt;/strong&gt; 文件，该文件是一个典型的INI格式的文件，类似于下面：&lt;/p&gt;
+
+&lt;p&gt;SOME_ENV_VAR=somevalue&lt;/p&gt;
+
+&lt;p&gt;然后在你的代码中调用 &lt;code&gt;godotenv.Load()&lt;/code&gt; 即可解析并将相应的Key/Value对都放到环境变量中。&lt;/p&gt;
+
+&lt;p&gt;例如可以通过 &lt;code&gt;os.Getenv(&amp;quot;SOME_ENV_VAR&amp;quot;)&lt;/code&gt; 获取。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考文献:a2f6952cdcca5db49437e97fa612c308&#34;&gt;参考文献&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/bkeepers/dotenv&#34;&gt;dotenv&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/joho/godotenv&#34;&gt;godotenv&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Golang开源项目源码阅读</title>
+      <link>http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/</link>
+      <pubDate>Sat, 19 Sep 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/</guid>
+      <description>
+
+&lt;h2 id=&#34;总览:95ce2e9a2ebc2effbd6ffc159f6de67a&#34;&gt;总览&lt;/h2&gt;
+
+&lt;h3 id=&#34;github-com-julienschmidt-httproute:95ce2e9a2ebc2effbd6ffc159f6de67a&#34;&gt;github.com/julienschmidt/httproute&lt;/h3&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/julienschmidt/httprouter&#34; title=&#34;httprouter&#34;&gt;httprouter&lt;/a&gt; 是一个轻量级的高性能HTTP请求分发器，英文称之为multiplexer，简称mux。&lt;/p&gt;
+
+&lt;h4 id=&#34;httproute特性:95ce2e9a2ebc2effbd6ffc159f6de67a&#34;&gt;httproute特性&lt;/h4&gt;
+
+&lt;ol&gt;
+&lt;li&gt;仅支持精确匹配，及只匹配一个模式或不会匹配到任何模式。相对于其他一些mux，例如go原生的 &lt;a href=&#34;http://golang.org/pkg/net/http/#ServeMux&#34;&gt;http.ServerMux&lt;/a&gt;, 会使得一个请求URL匹配多个模式，从而需要有优先级顺序，例如最长匹配、最先匹配等等。&lt;/li&gt;
+&lt;li&gt;不需要关心URL结尾的斜杠&lt;/li&gt;
+&lt;li&gt;路径自动归一化和矫正&lt;/li&gt;
+&lt;li&gt;零内存分配&lt;/li&gt;
+&lt;li&gt;高性能。这一点可以参考&lt;a href=&#34;https://github.com/julienschmidt/go-http-routing-benchmark&#34;&gt;Benchmarks&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;再也不会崩溃&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&#34;示例代码:95ce2e9a2ebc2effbd6ffc159f6de67a&#34;&gt;示例代码&lt;/h4&gt;
+
+&lt;p&gt;使用起来非常简单，与 &lt;code&gt;net/http&lt;/code&gt; 包提供的接口非常类似，甚至还提供了完全的一致的接口。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+    &amp;quot;fmt&amp;quot;
+    &amp;quot;github.com/julienschmidt/httprouter&amp;quot;
+    &amp;quot;net/http&amp;quot;
+    &amp;quot;log&amp;quot;
+)
+
+func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+    fmt.Fprint(w, &amp;quot;Welcome!\n&amp;quot;)
+}
+
+func Hello(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+    fmt.Fprintf(w, &amp;quot;hello, %s!\n&amp;quot;, ps.ByName(&amp;quot;name&amp;quot;))
+}
+
+func main() {
+    router := httprouter.New()
+    router.GET(&amp;quot;/&amp;quot;, Index)
+    router.GET(&amp;quot;/hello/:name&amp;quot;, Hello)
+
+    log.Fatal(http.ListenAndServe(&amp;quot;:8080&amp;quot;, router))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;源码阅读:95ce2e9a2ebc2effbd6ffc159f6de67a&#34;&gt;源码阅读&lt;/h4&gt;
+
+&lt;p&gt;httproute内部通过实现一个trie树来提高性能。核心代码就是golang标准库中 http.Handler 接口，在该函数中实现自己的请求路由分发策略。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;
+// ServeHTTP 实现
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if r.PanicHandler != nil {
+		defer r.recv(w, req)
+	}
+
+	if root := r.trees[req.Method]; root != nil {
+		path := req.URL.Path
+
+		if handle, ps, tsr := root.getValue(path); handle != nil {
+			handle(w, req, ps)
+			return
+		} else if req.Method != &amp;quot;CONNECT&amp;quot; &amp;amp;&amp;amp; path != &amp;quot;/&amp;quot; {
+			code := 301 // Permanent redirect, request with GET method
+			if req.Method != &amp;quot;GET&amp;quot; {
+				// Temporary redirect, request with same method
+				// As of Go 1.3, Go does not support status code 308.
+				code = 307
+			}
+
+			if tsr &amp;amp;&amp;amp; r.RedirectTrailingSlash {
+				if len(path) &amp;gt; 1 &amp;amp;&amp;amp; path[len(path)-1] == &#39;/&#39; {
+					req.URL.Path = path[:len(path)-1]
+				} else {
+					req.URL.Path = path + &amp;quot;/&amp;quot;
+				}
+				http.Redirect(w, req, req.URL.String(), code)
+				return
+			}
+
+			// Try to fix the request path
+			if r.RedirectFixedPath {
+				fixedPath, found := root.findCaseInsensitivePath(
+					CleanPath(path),
+					r.RedirectTrailingSlash,
+				)
+				if found {
+					req.URL.Path = string(fixedPath)
+					http.Redirect(w, req, req.URL.String(), code)
+					return
+				}
+			}
+		}
+	}
+
+	// Handle 405
+	if r.HandleMethodNotAllowed {
+		for method := range r.trees {
+			// Skip the requested method - we already tried this one
+			if method == req.Method {
+				continue
+			}
+
+			handle, _, _ := r.trees[method].getValue(req.URL.Path)
+			if handle != nil {
+				if r.MethodNotAllowed != nil {
+					r.MethodNotAllowed.ServeHTTP(w, req)
+				} else {
+					http.Error(w,
+						http.StatusText(http.StatusMethodNotAllowed),
+						http.StatusMethodNotAllowed,
+					)
+				}
+				return
+			}
+		}
+	}
+
+	// Handle 404
+	if r.NotFound != nil {
+		r.NotFound.ServeHTTP(w, req)
+	} else {
+		http.NotFound(w, req)
+	}
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;github-com-nbio-httpcontext:95ce2e9a2ebc2effbd6ffc159f6de67a&#34;&gt;github.com/nbio/httpcontext&lt;/h3&gt;
+
+&lt;p&gt;&lt;a href=&#34;github.com/nbio/httpcontext&#34;&gt;httpcontext&lt;/a&gt;该库提供更灵活的http请求上下文机制。具体实现上，使用了一个小技巧，就是通过动态修改 &lt;code&gt;http.Request.Body&lt;/code&gt; 接口来实现的。先看看代码：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;// 核心结构体
+type contextReadCloser struct {
+	io.ReadCloser
+	context map[interface{}]interface{}
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上述结构体实现由于直接继承了 ReadCloser 接口，因此可以直接替换掉 &lt;code&gt;http.Request.Body&lt;/code&gt; 。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;func getContextReadCloser(req *http.Request) ContextReadCloser {
+	crc, ok := req.Body.(ContextReadCloser)
+	if !ok {
+		crc = &amp;amp;contextReadCloser{
+			ReadCloser: req.Body,
+			context:    make(map[interface{}]interface{}),
+		}
+		req.Body = crc
+	}
+	return crc
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;我们一起看看下面的示例代码来感受一下这个库的用法：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+    &amp;quot;fmt&amp;quot;
+    &amp;quot;github.com/nbio/httpcontext&amp;quot;
+    &amp;quot;net/http&amp;quot;
+    &amp;quot;log&amp;quot;
+)
+
+func Hello(w http.ResponseWriter, r *http.Request) {
+    httpcontext.Set(r, &amp;quot;key1&amp;quot;, &amp;quot;value1&amp;quot;) // Set a context with this request r
+    val := httpcontext.Get(r, &amp;quot;key1&amp;quot;)    // Get the context
+    v, _ := val.(string)
+    fmt.Printf(&amp;quot;Got a value associated with key1 : %v\n&amp;quot;, v)
+    w.Write([]byte(&amp;quot;OK&amp;quot;))
+}
+
+func main() {
+    http.HandleFunc(&amp;quot;/hello&amp;quot;, Hello)
+    log.Fatal(http.ListenAndServe(&amp;quot;:8080&amp;quot;, nil))
+}
+&lt;/code&gt;&lt;/pre&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>golang学习之如何构造一个multipart/form格式的HTTP请求</title>
+      <link>http://blog.codeg.cn/2015/03/18/golang-how-to-make-a-multipart-http-request/</link>
+      <pubDate>Wed, 18 Mar 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/03/18/golang-how-to-make-a-multipart-http-request/</guid>
+      <description>
+
+&lt;p&gt;使用PHP里面的curl扩展库可以方便的从一个php array来构造一个&lt;code&gt;multipart/form&lt;/code&gt;格式的HTTP请求，但golang里构造起来稍稍麻烦一点，下面我们来介绍具体的构造方法。&lt;/p&gt;
+
+&lt;h2 id=&#34;具体代码实现:84d30e0faef44887780b73fe0888f4a7&#34;&gt;具体代码实现&lt;/h2&gt;
+
+&lt;p&gt;实际代码中用到 &lt;code&gt;multipart.Writer&lt;/code&gt;，并调用其 &lt;code&gt;writer.WriteField(key, val)&lt;/code&gt; 方法来构造。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;bytes&amp;quot;
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;log&amp;quot;
+	&amp;quot;mime/multipart&amp;quot;
+	&amp;quot;net/http&amp;quot;
+)
+
+// Creates a new file upload http request with optional extra params
+func newMultipartRequest(url string, params map[string]string) (*http.Request, error) {
+	body := &amp;amp;bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for key, val := range params {
+		_ = writer.WriteField(key, val)
+	}
+	writer.Close()
+	return http.NewRequest(&amp;quot;POST&amp;quot;, url, body)
+}
+
+func main() {
+	extraParams := map[string]string{
+		&amp;quot;title&amp;quot;:       &amp;quot;My Document&amp;quot;,
+		&amp;quot;author&amp;quot;:      &amp;quot;zieckey&amp;quot;,
+		&amp;quot;description&amp;quot;: &amp;quot;A document with all the Go programming language secrets&amp;quot;,
+	}
+	request, err := newMultipartRequest(&amp;quot;http://127.0.0.1:8091/echo&amp;quot;, extraParams)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := &amp;amp;http.Client{}
+	resp, err := client.Do(request)
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		body := &amp;amp;bytes.Buffer{}
+		_, err := body.ReadFrom(resp.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+		resp.Body.Close()
+		fmt.Println(resp.StatusCode)
+		fmt.Println(resp.Header)
+		fmt.Println(body)
+	}
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;报文示例:84d30e0faef44887780b73fe0888f4a7&#34;&gt;报文示例&lt;/h2&gt;
+
+&lt;p&gt;上述代码构造的HTTP报文如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;--f1f6c2b63373057a4439aa01f678d51850567c50b51e0523bb445d911d1d
+Content-Disposition: form-data; name=&amp;quot;title&amp;quot;
+
+My Document
+--f1f6c2b63373057a4439aa01f678d51850567c50b51e0523bb445d911d1d
+Content-Disposition: form-data; name=&amp;quot;author&amp;quot;
+
+zieckey
+--f1f6c2b63373057a4439aa01f678d51850567c50b51e0523bb445d911d1d
+Content-Disposition: form-data; name=&amp;quot;description&amp;quot;
+
+A document with all the Go programming language secrets
+--f1f6c2b63373057a4439aa01f678d51850567c50b51e0523bb445d911d1d--
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;参考:84d30e0faef44887780b73fe0888f4a7&#34;&gt;参考&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://matt.aimonetti.net/posts/2013/07/01/golang-multipart-file-upload-example/&#34;&gt;http://matt.aimonetti.net/posts/2013/07/01/golang-multipart-file-upload-example/&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>golang学习之继承和重载</title>
+      <link>http://blog.codeg.cn/2015/02/12/golang-derive-override/</link>
+      <pubDate>Thu, 12 Feb 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/02/12/golang-derive-override/</guid>
+      <description>
+
+&lt;p&gt;其实golang里是不提倡继承的，也不提倡重载的。但是有些场景下，我们还是想试验一下传统C++或Java语言里的继承和重载能否用在golang里。&lt;/p&gt;
+
+&lt;h2 id=&#34;实现:7df8eccedef375025511e0a13dbe751d&#34;&gt;实现&lt;/h2&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;fmt&amp;quot;
+)
+
+
+type Person struct {
+	Id   int
+	Name string
+}
+
+type Tester interface {
+	Test()
+	Eat()
+}
+
+func (this *Person) Test() {
+	fmt.Println(&amp;quot;\tthis =&amp;quot;, &amp;amp;this, &amp;quot;Person.Test&amp;quot;)
+}
+
+func (this *Person) Eat() {
+	fmt.Println(&amp;quot;\tthis =&amp;quot;, &amp;amp;this, &amp;quot;Person.Eat&amp;quot;)
+}
+
+// Employee 从Person继承, 直接继承了 Eat 方法，并且将 Test 方法覆盖了。
+type Employee struct {
+	Person
+}
+
+func (this *Employee) Test() {
+	fmt.Println(&amp;quot;\tthis =&amp;quot;, &amp;amp;this, &amp;quot;Employee.Test&amp;quot;)
+	this.Person.Test() // 调用父类的方法，且该方法被子类覆盖了
+}
+
+func main() {
+	fmt.Println(&amp;quot;An Employee instance :&amp;quot;)
+	var nu Employee
+	nu.Id = 2
+	nu.Name = &amp;quot;NTom&amp;quot;
+	nu.Test()
+	nu.Eat()
+	fmt.Println()
+	
+	fmt.Println(&amp;quot;A Tester interface to Employee instance :&amp;quot;)
+	var t Tester
+	t = &amp;amp;nu
+	t.Test()
+	t.Eat()
+	fmt.Println()
+	
+	fmt.Println(&amp;quot;A Tester interface to Person instance :&amp;quot;)
+	t = &amp;amp;nu.Person
+	t.Test()
+	t.Eat()
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;输出如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;An Employee instance :
+	this = 0xc082024020 Employee.Test
+	this = 0xc082024028 Person.Test
+	this = 0xc082024030 Person.Eat
+
+A Tester interface to Employee instance :
+	this = 0xc082024038 Employee.Test
+	this = 0xc082024040 Person.Test
+	this = 0xc082024048 Person.Eat
+
+A Tester interface to Person instance :
+	this = 0xc082024050 Person.Test
+	this = 0xc082024058 Person.Eat
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;参考:7df8eccedef375025511e0a13dbe751d&#34;&gt;参考&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://www.cnblogs.com/yjf512/archive/2012/09/13/2684133.html&#34;&gt;http://www.cnblogs.com/yjf512/archive/2012/09/13/2684133.html&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>golang解析MIME数据格式的代码示例</title>
+      <link>http://blog.codeg.cn/2015/01/23/mime-golang-parsing/</link>
+      <pubDate>Fri, 23 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/23/mime-golang-parsing/</guid>
+      <description>
+
+&lt;h3 id=&#34;mime格式:275aa5f5d3125c84c374c65a3d5eadfc&#34;&gt;MIME格式&lt;/h3&gt;
+
+&lt;p&gt;&lt;code&gt;MIME&lt;/code&gt;是multipurpose Internet mail extensions 的缩写。它是一种协议，可使电子邮件除包含一般纯文本以外，还可加上彩色图片、视频、声音或二进位格式的文件。它要求邮件的发送端和接收端必须有解读MIME协议的电子邮件程序。&lt;/p&gt;
+
+&lt;p&gt;本文介绍了如何使用golang来解析MIME以及multipart格式的数据。并给出了详细的示例代码。&lt;/p&gt;
+
+&lt;h3 id=&#34;mime格式示例数据:275aa5f5d3125c84c374c65a3d5eadfc&#34;&gt;MIME格式示例数据&lt;/h3&gt;
+
+&lt;p&gt;请点击 &lt;a href=&#34;http://blog.codeg.cn/resources/example.mime.txt&#34;&gt;resources/example.mime.txt&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;完整解析代码请参考：&lt;a href=&#34;https://github.com/zieckey/gohello/tree/master/mime&#34;&gt;https://github.com/zieckey/gohello/tree/master/mime&lt;/a&gt;&lt;/p&gt;
+
+&lt;h3 id=&#34;解析boundary:275aa5f5d3125c84c374c65a3d5eadfc&#34;&gt;解析boundary&lt;/h3&gt;
+
+&lt;p&gt;使用&lt;code&gt;net/textproto.Reader&lt;/code&gt;来解析。示例代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;// 从textproto.Reader读取数据
+func (m *MHtml) GetBoundary(r *textproto.Reader) string {
+	// 先调用ReadMIMEHeader来解析MIME的头信息
+	mimeHeader, err := r.ReadMIMEHeader()
+	if err != nil {
+		return &amp;quot;&amp;quot;
+	}
+
+	// 然后得到 &amp;quot;Content-Type&amp;quot;
+	fmt.Printf(&amp;quot;%v %v\n&amp;quot;, mimeHeader, err)
+	contentType := mimeHeader.Get(&amp;quot;Content-Type&amp;quot;)
+	fmt.Printf(&amp;quot;Content-Type = %v %v\n&amp;quot;, contentType)
+
+	// 再然后，调用 mime.ParseMediaType 来解析 &amp;quot;Content-Type&amp;quot;
+	mediatype, params, err := mime.ParseMediaType(contentType)
+	fmt.Printf(&amp;quot;mediatype=%v,  params=%v %v, err=%v\n&amp;quot;, mediatype, len(params), params, err)
+
+	// 最最后，得到 boundary
+	boundary := params[&amp;quot;boundary&amp;quot;]
+	fmt.Printf(&amp;quot;boundary=%v\n&amp;quot;, boundary)
+	return boundary
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;解析正文:275aa5f5d3125c84c374c65a3d5eadfc&#34;&gt;解析正文&lt;/h3&gt;
+
+&lt;p&gt;使用&lt;code&gt;mime/multipart.Reader&lt;/code&gt;来解析multipart格式的正文&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	mr := multipart.NewReader(br, boundary)
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+
+		d := make([]byte, len(mht))
+		n, err := part.Read(d)
+		if err != nil &amp;amp;&amp;amp; err != io.EOF {
+			return err
+		}
+		d = d[:n]
+		fmt.Printf(&amp;quot;filename=%v formname=%v n=%v err=%v content=\n&amp;quot;, part.FileName(), part.FormName(), n, err)
+		contentType := part.Header[&amp;quot;Content-Type&amp;quot;]
+		if len(contentType) == 0 {
+			continue
+		}
+		fmt.Printf(&amp;quot;Content-Type=%v\n&amp;quot;, contentType[0])
+		if contentType[0] == &amp;quot;text/html&amp;quot; {
+			m.Html = string(d)
+			break
+		}
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;参考:275aa5f5d3125c84c374c65a3d5eadfc&#34;&gt;参考&lt;/h3&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://godoc.org/mime&#34;&gt;http://godoc.org/mime&lt;/a&gt;
+&lt;a href=&#34;http://godoc.org/net/textproto&#34;&gt;http://godoc.org/net/textproto&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>多进程编程</title>
+      <link>http://blog.codeg.cn/2015/01/13/linux-system-programming/</link>
+      <pubDate>Tue, 13 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/13/linux-system-programming/</guid>
+      <description>
+
+&lt;h3 id=&#34;wait-和-waitpid:3f64be113f8a592d17a2347ee2a95fd7&#34;&gt;wait 和 waitpid&lt;/h3&gt;
+
+&lt;p&gt;当一个进程正常或异常退出时，内核就向其父进程发送&lt;code&gt;SIGCHLD&lt;/code&gt;信号。因为子进程退出是一个异步事件，所以该信号也是内核向父进程发送的异步信号。&lt;/p&gt;
+
+&lt;p&gt;wait的函数原型是：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;#include &amp;lt;sys/types.h&amp;gt;
+#include &amp;lt;sys/wait.h&amp;gt;
+
+pid_t wait(int *status);
+pid_t waitpid(pid_t pid, int *status, int options);
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;参数status用来保存被收集进程退出时的一些状态信息，它是一个指向int类型的指针。进程一旦调用了wait或waitpid，则可能发生：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;如果其所有子进程都还在运行，则阻塞&lt;/li&gt;
+&lt;li&gt;如果某个子进程已经退出， wait/waitpid就会收集这个子进程的信息，并把它彻底销毁后返回&lt;/li&gt;
+&lt;li&gt;如果没有任何子进程，则会立即出错返回　　　　&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;这两个函数的区别在于：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;在子进程结束之前，wait使其调用者阻塞，而waitpid有一个选项，可以使调用者不阻塞。&lt;/li&gt;
+&lt;li&gt;waitpid并不等待在其调用之后的第一个终止子进程，它有若干选项可以控制它所等待的子进程。&lt;/li&gt;
+&lt;li&gt;对于wait()，其唯一的出错是调用进程没有子进程；对于waitpid()，若指定的进程或进程组不存在，或者参数pid指定的进程不是调用进程的子进程都可能出错。&lt;/li&gt;
+&lt;li&gt;waitpid()提供了wait()没有的三个功能：一是waitpid()可等待一个特定的进程；二是waitpid()提供了一个wait()的非阻塞版本（有时希望取的一个子进程的状态，但不想使父进程阻塞，waitpid() 提供了一个这样的选择：WNOHANG，它可以使调用者不阻塞）；三是waitpid()支持作业控制。&lt;/li&gt;
+&lt;li&gt;wait(&amp;amp;status) 的功能就等于waitpid(-1, &amp;amp;status, 0);&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;下面看一个示例代码：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;#include&amp;lt;stdio.h&amp;gt;
+#include&amp;lt;sys/types.h&amp;gt;
+#include&amp;lt;sys/wait.h&amp;gt;
+#include&amp;lt;unistd.h&amp;gt;
+#include&amp;lt;stdlib.h&amp;gt;
+
+int main()
+{
+    pid_t child;
+    int i;
+    child = fork();
+    if(child &amp;lt; 0){
+        printf(&amp;quot;create failed!\n&amp;quot;);
+        return (1);
+    }
+    else if (0 == child){
+        printf(&amp;quot;this is the child process pid= %d\n&amp;quot;,getpid());
+        for(i = 0;i&amp;lt;5;i++){
+            printf(&amp;quot;this is the child process print %d !\n&amp;quot;,i+1);
+        }
+        printf(&amp;quot;the child end\n&amp;quot;);
+    }
+    else{
+        printf(&amp;quot;this is the father process,ppid=%d\n&amp;quot;,getppid());
+        printf(&amp;quot;father wait the child end\n&amp;quot;);
+        wait(&amp;amp;child);
+        printf(&amp;quot;father end\n&amp;quot;);
+    }
+
+    return 0;
+}
+
+运行结果：
+$ ./wait 
+this is the father process,ppid=21831
+father wait the child end
+this is the child process pid= 22126
+this is the child process print 1 !
+this is the child process print 2 !
+this is the child process print 3 !
+this is the child process print 4 !
+this is the child process print 5 !
+the child end
+father end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;sigprocmask:3f64be113f8a592d17a2347ee2a95fd7&#34;&gt;sigprocmask&lt;/h3&gt;
+
+&lt;p&gt;有时候不希望在接到信号时就立即停止当前执行去处理信号，同时也不希望忽略该信号，而是延时一段时间去调用信号处理函数。这种情况是通过阻塞信号实现的，即调用&lt;code&gt;sigprocmask&lt;/code&gt;系统函数。&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;sigprocmask&lt;/code&gt;功能描述：设定对信号屏蔽集内的信号的处理方式(阻塞或不阻塞)。函数原型：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;#include &amp;lt;signal.h&amp;gt;
+int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;参数&lt;code&gt;how&lt;/code&gt;用于指定信号修改的方式，可能选择有三种&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;SIG_BLOCK   将set信号集合加入进程的信号屏蔽列表中&lt;/li&gt;
+&lt;li&gt;SIG_UNBLOCK 将set信号集合从进程的信号屏蔽列表中删除&lt;/li&gt;
+&lt;li&gt;SIG_SETMASK 将set信号集合设定为新的进程的信息屏蔽列表&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;strong&gt;屏蔽之后又能怎样呢？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;To be continue &amp;hellip;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Golang源码阅读——crypto/subtle.ConstantTimeByteEq 深度解析</title>
+      <link>http://blog.codeg.cn/2015/01/12/go-source-code-reading-ConstantTimeByteEq/</link>
+      <pubDate>Mon, 12 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/12/go-source-code-reading-ConstantTimeByteEq/</guid>
+      <description>
+
+&lt;p&gt;根据文档说明，&lt;code&gt;ConstantTimeByteEq&lt;/code&gt;返回1，如果 x == y；相反则返回0。为什么一个简单整数比较操作要搞一个单独的函数出来实现？并且其实现代码看起来要不&lt;code&gt;x == y&lt;/code&gt;复杂多了？&lt;/p&gt;
+
+&lt;h2 id=&#34;源码及分析:ef64d2df714e833ca9fe22eeddfbfeb8&#34;&gt;源码及分析&lt;/h2&gt;
+
+&lt;p&gt;先看源码实现，如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;// ConstantTimeByteEq returns 1 if x == y and 0 otherwise.
+func ConstantTimeByteEq(x, y uint8) int {
+	z := ^(x ^ y)
+	z &amp;amp;= z &amp;gt;&amp;gt; 4
+	z &amp;amp;= z &amp;gt;&amp;gt; 2
+	z &amp;amp;= z &amp;gt;&amp;gt; 1
+
+	return int(z)
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;分析源码可以发现，其的确是实现了该函数的功能，如果&lt;code&gt;x == y&lt;/code&gt;则返回1；相反则返回0。&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;x ^ y&lt;/code&gt;就是x按位异或y, 以某一位为例，其异或结果为1如果x和y不同，相反为0:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;x            = 01010011
+y            = 00010011
+x ^ y        = 01000000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;code&gt;^(x ^ y)&lt;/code&gt;是上述表达式的取反操作&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;^(x ^ y)     = 10111111 =&amp;gt; z
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然后，我们开始右移&lt;code&gt;z&lt;/code&gt;。其过程如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;z &amp;gt;&amp;gt; 4       = 00001011
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;第一轮：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;z            = 10111111
+z &amp;gt;&amp;gt; 4       = 00001011
+z &amp;amp; (z &amp;gt;&amp;gt; 4) = 00001011
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;第二轮：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;z            = 00001011
+z &amp;gt;&amp;gt; 2       = 00000010
+z &amp;amp; (z &amp;gt;&amp;gt; 2) = 00000010
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最后一轮：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;z            = 00001010
+z &amp;gt;&amp;gt; 1       = 00000001
+z &amp;amp; (z &amp;gt;&amp;gt; 1) = 00000000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然后我们得到&lt;code&gt;z&lt;/code&gt;的结果为0。如果&lt;code&gt;x&lt;/code&gt;与&lt;code&gt;y&lt;/code&gt;的值不同，那么其结果如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;z            = 11111111
+z (&amp;amp; z &amp;gt;&amp;gt; 4) = 00001111
+z (&amp;amp; z &amp;gt;&amp;gt; 2) = 00000011
+z (&amp;amp; z &amp;gt;&amp;gt; 1) = 00000001
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;因此，该函数真的就如其文档所述，当&lt;code&gt;x == y&lt;/code&gt;时返回1，否则返回0。&lt;/p&gt;
+
+&lt;h2 id=&#34;背后的含义:ef64d2df714e833ca9fe22eeddfbfeb8&#34;&gt;背后的含义&lt;/h2&gt;
+
+&lt;p&gt;一般而言，关于两个数，&lt;code&gt;x&lt;/code&gt;与&lt;code&gt;y&lt;/code&gt;之间的比较操作，如果&lt;code&gt;x&lt;/code&gt;与&lt;code&gt;y&lt;/code&gt;都为0的话，其消耗的CPU时间会比较小，其他情况下会消耗更多的CPU时间。换句话说，&lt;code&gt;x&lt;/code&gt;与&lt;code&gt;y&lt;/code&gt;之间的比较操作所耗费的CPU时间与其具体值有关。Golang源码中如此做是为了得到一致的CPU时间消耗，而与&lt;code&gt;x&lt;/code&gt;、&lt;code&gt;y&lt;/code&gt;的值具体是什么无关。通过这种方法，一个攻击者（黑客）就不可能利用基于时间相关的旁道攻击了。&lt;/p&gt;
+
+&lt;p&gt;为什么会有这种区别呢？其核心是为避免CPU的分支预测技术。请看看下面的代码：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;var a, b, c, d byte
+_ =  a == b &amp;amp;&amp;amp; c == d
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;编译出来的汇编代码可能为：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;0017 (foo.go:15) MOVQ    $0,BX
+0018 (foo.go:15) MOVQ    $0,DX
+0019 (foo.go:15) MOVQ    $0,CX
+0020 (foo.go:15) MOVQ    $0,AX
+0021 (foo.go:16) JMP     ,24
+0022 (foo.go:16) MOVQ    $1,AX
+0023 (foo.go:16) JMP     ,30
+0024 (foo.go:16) CMPB    BX,DX
+0025 (foo.go:16) JNE     ,29
+0026 (foo.go:16) CMPB    CX,AX
+0027 (foo.go:16) JNE     ,29
+0028 (foo.go:16) JMP     ,22
+0029 (foo.go:16) MOVQ    $0,AX
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;而利用 &lt;code&gt;ConstantTimeByteEq&lt;/code&gt;，如下&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;var a, b, c, d byte
+_ =  subtle.ConstantTimeByteEq(a, b) &amp;amp; subtle.ConstantTimeByteEq(c, d)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;则汇编代码可能为：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;0018 (foo.go:15) MOVQ    $0,DX
+0019 (foo.go:15) MOVQ    $0,AX
+0020 (foo.go:15) MOVQ    $0,DI
+0021 (foo.go:15) MOVQ    $0,SI
+0022 (foo.go:16) XORQ    AX,DX
+0023 (foo.go:16) XORQ    $-1,DX
+0024 (foo.go:16) MOVQ    DX,BX
+0025 (foo.go:16) SHRB    $4,BX
+0026 (foo.go:16) ANDQ    BX,DX
+0027 (foo.go:16) MOVQ    DX,BX
+0028 (foo.go:16) SHRB    $2,BX
+0029 (foo.go:16) ANDQ    BX,DX
+0030 (foo.go:16) MOVQ    DX,AX
+0031 (foo.go:16) SHRB    $1,DX
+0032 (foo.go:16) ANDQ    DX,AX
+0033 (foo.go:16) MOVBQZX AX,DX
+0034 (foo.go:16) MOVQ    DI,BX
+0035 (foo.go:16) XORQ    SI,BX
+0036 (foo.go:16) XORQ    $-1,BX
+0037 (foo.go:16) MOVQ    BX,AX
+0038 (foo.go:16) SHRB    $4,BX
+0039 (foo.go:16) ANDQ    BX,AX
+0040 (foo.go:16) MOVQ    AX,BX
+0041 (foo.go:16) SHRB    $2,BX
+0042 (foo.go:16) ANDQ    BX,AX
+0043 (foo.go:16) MOVQ    AX,BX
+0044 (foo.go:16) SHRB    $1,BX
+0045 (foo.go:16) ANDQ    BX,AX
+0046 (foo.go:16) MOVBQZX AX,BX
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;可以看出，虽然第二种汇编指令更长更多，但其是线性执行的，没有任何分支。有道是，哪怕是一个比特的信息泄露，也有可能将你的加密体系从“基本上牢不可破”变为“希望其不值得一破”，这是件相当严肃的事情。&lt;/p&gt;
+
+&lt;h2 id=&#34;旁道攻击-sca-side-channel-attack:ef64d2df714e833ca9fe22eeddfbfeb8&#34;&gt;旁道攻击（SCA：side-channel attack）&lt;/h2&gt;
+
+&lt;p&gt;旁道攻击是避开复杂的密码算法，利用密码算法在软硬件实现的系统中泄露出的各种信息进行攻击，一般分为时间攻击(timing side-channel attack)、电磁攻击、能量攻击等三种旁道攻击方法。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考资料:ef64d2df714e833ca9fe22eeddfbfeb8&#34;&gt;参考资料：&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://stackoverflow.com/questions/17603487/how-does-constanttimebyteeq-work&#34;&gt;http://stackoverflow.com/questions/17603487/how-does-constanttimebyteeq-work&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://stackoverflow.com/questions/18366158/why-do-we-need-a-constant-time-single-byte-comparison-function&#34;&gt;http://stackoverflow.com/questions/18366158/why-do-we-need-a-constant-time-single-byte-comparison-function&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://en.wikipedia.org/wiki/Side_channel_attack&#34;&gt;旁道攻击http://en.wikipedia.org/wiki/Side_channel_attack&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>golang网络编程-udp客户端示例代码</title>
+      <link>http://blog.codeg.cn/2015/01/07/golang-udp-client/</link>
+      <pubDate>Wed, 07 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/07/golang-udp-client/</guid>
+      <description>
+
+&lt;h3 id=&#34;最简单的一个客户端:2fcaff2a7f63c6a64af5179c144acbd9&#34;&gt;最简单的一个客户端&lt;/h3&gt;
+
+&lt;p&gt;编程步骤：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;创建一个udp socket并连接服务器&lt;/li&gt;
+&lt;li&gt;发送数据给服务器&lt;/li&gt;
+&lt;li&gt;从服务器接收数据&lt;/li&gt;
+&lt;li&gt;关闭udp socket&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main 
+
+import (
+    &amp;quot;fmt&amp;quot;
+    &amp;quot;net&amp;quot;
+    &amp;quot;os&amp;quot;
+)
+
+func main() {
+	hostport := &amp;quot;10.16.28.17:1053&amp;quot;
+    if len(os.Args) == 2 {
+    	hostport = os.Args[1]
+    }
+   
+    addr, err := net.ResolveUDPAddr(&amp;quot;udp&amp;quot;, hostport)
+    if err != nil {
+        fmt.Println(&amp;quot;server address error. It MUST be a format like this hostname:port&amp;quot;, err)
+        return
+    }
+
+	// Create a udp socket and connect to server        
+    socket, err := net.DialUDP(&amp;quot;udp4&amp;quot;, nil, addr)
+    if err != nil {
+        fmt.Printf(&amp;quot;connect to udpserver %v failed : %v&amp;quot;, addr.String(), err.Error())
+        return
+    }
+    defer socket.Close()
+
+	// send data to server
+    senddata := []byte(&amp;quot;hello server!&amp;quot;)
+    _, err = socket.Write(senddata)
+    if err != nil {
+        fmt.Println(&amp;quot;send data error &amp;quot;, err)
+        return
+    }
+
+	// recv data from server
+    data := make([]byte, 4096)
+    read, remoteAddr, err := socket.ReadFromUDP(data)
+    if err != nil {
+        fmt.Println(&amp;quot;recv data error &amp;quot;, err)
+        return
+    }
+    
+    fmt.Printf(&amp;quot;server addr [%v], response data len:%v [%s]\n&amp;quot;, remoteAddr, read, string(data[:read]))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;udp-benchmark-client:2fcaff2a7f63c6a64af5179c144acbd9&#34;&gt;udp benchmark client&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;bytes&amp;quot;
+	&amp;quot;flag&amp;quot;
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;github.com/funny/overall&amp;quot;
+	&amp;quot;net&amp;quot;
+	&amp;quot;os&amp;quot;
+	&amp;quot;sync&amp;quot;
+	&amp;quot;sync/atomic&amp;quot;
+	&amp;quot;time&amp;quot;
+)
+
+var concurrence = flag.Int(&amp;quot;c&amp;quot;, 1, &amp;quot;Number of multiple requests to make&amp;quot;)
+var numRequest = flag.Int(&amp;quot;n&amp;quot;, 1, &amp;quot;Number of requests to perform&amp;quot;)
+var verbosity = flag.Bool(&amp;quot;v&amp;quot;, false, &amp;quot;How much troubleshooting info to print&amp;quot;)
+var echoVerify = flag.Bool(&amp;quot;e&amp;quot;, false, &amp;quot;the echo mode and verify the response data&amp;quot;)
+var hostPort = flag.String(&amp;quot;h&amp;quot;, &amp;quot;127.0.0.1:1053&amp;quot;, &amp;quot;The hostname and port of the udp server&amp;quot;)
+var messageLen = flag.Int(&amp;quot;l&amp;quot;, 100, &amp;quot;The length of the send message&amp;quot;)
+var timeoutMs = flag.Int(&amp;quot;t&amp;quot;, 100, &amp;quot;The timeout milliseconds&amp;quot;)
+
+type Stat struct {
+	send       int64
+	recv       int64
+	sendsucc   int64
+	sendfail   int64
+	recvsucc   int64
+	recvfail   int64
+	compareerr int64
+}
+
+func (s Stat) dump() string {
+	return fmt.Sprintf(&amp;quot;send:%v recv:%v sendsucc:%v recvsucc:%v compareerr:%v sendfail:%v recvfail:%v&amp;quot;,
+		s.send, s.recv, s.sendsucc, s.recvsucc, s.compareerr, s.sendfail, s.recvfail)
+}
+
+var stat Stat
+
+func main() {
+	flag.Parse()
+	var wg sync.WaitGroup
+	recoder := overall.NewTimeRecoder()
+	for c := 0; c &amp;lt; *concurrence; c++ {
+		go request(&amp;amp;wg, recoder)
+		wg.Add(1)
+	}
+
+	wg.Wait()
+
+	fmt.Println(stat.dump())
+
+	var buf bytes.Buffer
+	recoder.WriteCSV(&amp;amp;buf)
+	fmt.Println(buf.String())
+
+	if stat.compareerr != 0 || stat.recvfail != 0 || stat.sendfail != 0 {
+		os.Exit(1)
+	}
+}
+
+func request(wg *sync.WaitGroup, record *overall.TimeRecoder) {
+	defer wg.Done()
+	
+	addr, err := net.ResolveUDPAddr(&amp;quot;udp&amp;quot;, *hostPort)
+	if err != nil {
+		fmt.Println(&amp;quot;server address error. It MUST be a format like this hostname:port&amp;quot;, err)
+		return
+	}
+
+	// Create a udp socket and connect to server
+	socket, err := net.DialUDP(&amp;quot;udp4&amp;quot;, nil, addr)
+	if err != nil {
+		fmt.Printf(&amp;quot;connect to udpserver %v failed : %v&amp;quot;, addr.String(), err.Error())
+		return
+	}
+	defer socket.Close()
+
+	msg := make([]byte, *messageLen)
+	for i := 0; i &amp;lt; *messageLen; i++ {
+		msg[i] = &#39;a&#39; + byte(i)%26
+	}
+
+	for n := 0; n &amp;lt; *numRequest; n++ {
+		t := time.Now()
+		
+		socket.SetDeadline(t.Add(time.Duration(100 * time.Millisecond)))
+		
+		// send data to server
+		_, err = socket.Write(msg)
+		if err != nil {
+			fmt.Println(&amp;quot;send data error &amp;quot;, err)
+			atomic.AddInt64(&amp;amp;stat.sendfail, 1)
+			return
+		}
+
+		// recv data from server
+		data := make([]byte, 1472)
+		read, remoteAddr, err := socket.ReadFromUDP(data)
+		if err != nil {
+			fmt.Println(&amp;quot;recv data error &amp;quot;, err)
+			atomic.AddInt64(&amp;amp;stat.recvfail, 1)
+			return
+		}
+		data = data[:read]
+		record.Record(&amp;quot;onetrip&amp;quot;, time.Since(t))
+
+		if *verbosity {
+			fmt.Printf(&amp;quot;server addr [%v], response data len:%v [%s]\n&amp;quot;, remoteAddr, read, string(data[:read]))
+		}
+
+		if *echoVerify {
+			if bytes.Compare(data, msg) != 0 {
+				atomic.AddInt64(&amp;amp;stat.compareerr, 1)
+			}
+		}
+
+		atomic.AddInt64(&amp;amp;stat.send, 1)
+		atomic.AddInt64(&amp;amp;stat.recv, 1)
+		atomic.AddInt64(&amp;amp;stat.sendsucc, 1)
+		atomic.AddInt64(&amp;amp;stat.recvsucc, 1)
+	}
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

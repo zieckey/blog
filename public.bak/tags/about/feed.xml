@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>About on CodeG Blog</title>
+    <link>http://blog.codeg.cn/tags/about/</link>
+    <description>Recent content in About on CodeG Blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-CN</language>
+    <copyright>Copyright (c) 2015. All rights reserved.</copyright>
+    <lastBuildDate>Sat, 13 Dec 2014 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://blog.codeg.cn/tags/about/feed/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>你好，编码哥</title>
+      <link>http://blog.codeg.cn/2014/12/13/Hello-CodeG/</link>
+      <pubDate>Sat, 13 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2014/12/13/Hello-CodeG/</guid>
+      <description>&lt;p&gt;哥都不记得上次写博客的具体时间了，中间一直说写点什么，就是没有动手。原因有几：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;哥的文笔不太好&lt;/li&gt;
+&lt;li&gt;总觉得技术水平不够高，文章写起来总没深度，不好意思写&lt;/li&gt;
+&lt;li&gt;哥比较懒&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;现在来看，前面两点都是扯淡的，懒惰才是重点。好吧，哥承认了。哥决定从今个起，找一个好的博客托管服务器，好好写点文章，尤其是多写点技术文章，用来记录哥的学习、工作中值得记录的点滴，而不论高深或浅薄与否。&lt;/p&gt;
+
+&lt;p&gt;插，从此以后，请叫我编码哥。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

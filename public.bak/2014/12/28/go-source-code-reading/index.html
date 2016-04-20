@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <base href="http://blog.codeg.cn/">
+    <script>
+    document._writeOriginal = document.write;
+    document.write = function(str) {
+        if (str.indexOf('livereload.js') > -1) {
+            document._writeOriginal(str);
+        } else {
+            document._writeOriginal('<!-- Be Hijack!! -->');
+        }
+    }
+
+    </script>
+    <title>Golang源码阅读 - CodeG Blog</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+<meta name="description" content="对Golang源码中的`src/cmd/dist/buf.c`、`src/lib9/cleanname.c`、`cmd/dist/windows.c`、`src/unicode/utf8/utf8.go`等部分文件进行阅读和整理。">
+<meta name="author" content="zieckey">
+<meta name="publisher" content="zieckey">
+<meta name="generator" content="http://gohugo.io/"/>
+
+<meta itemprop="name" content="Golang源码阅读 - CodeG Blog">
+<meta itemprop="description" content="对Golang源码中的`src/cmd/dist/buf.c`、`src/lib9/cleanname.c`、`cmd/dist/windows.c`、`src/unicode/utf8/utf8.go`等部分文件进行阅读和整理。">
+<meta itemprop="image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+<meta property="og:title" content="Golang源码阅读 - CodeG Blog" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://blog.codeg.cn/2014/12/28/go-source-code-reading/" />
+<meta property="og:image" content="http://blog.codeg.cn/public/codeg.jpg" />
+<meta property="og:description" content="对Golang源码中的`src/cmd/dist/buf.c`、`src/lib9/cleanname.c`、`cmd/dist/windows.c`、`src/unicode/utf8/utf8.go`等部分文件进行阅读和整理。">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@zieckey">
+<meta name="twitter:title" content="Golang源码阅读 - CodeG Blog">
+<meta name="twitter:description" content="对Golang源码中的`src/cmd/dist/buf.c`、`src/lib9/cleanname.c`、`cmd/dist/windows.c`、`src/unicode/utf8/utf8.go`等部分文件进行阅读和整理。">
+<meta name="twitter:creator" content="@zieckey">
+<meta name="twitter:image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+    <script>document.documentElement.className = document.documentElement.className.replace("no-js", "js");</script>
+    <link rel="canonical" href="http://blog.codeg.cn/2014/12/28/go-source-code-reading/">
+    <link rel='shortlink' href="http://blog.codeg.cn/2014/12/28/go-source-code-reading/"/>
+    <link rel="shortcut icon" href="http://blog.codeg.cn/public/favicon.ico"/>
+    
+<link rel="stylesheet" id="human-style-css" href="http://blog.codeg.cn/wp-content/themes/hueman/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="human-style-css2" href="http://blog.codeg.cn/wp-content/themes/hueman-child/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="responsive-css" href="http://blog.codeg.cn/wp-content/themes/hueman/responsive.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="font-awesome-css" href="http://blog.codeg.cn/wp-content/themes/hueman/fonts/font-awesome.min.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="http://blog.codeg.cn/public/highlight/styles/github.css">
+<script src="http://blog.codeg.cn/public/highlight/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<link rel="stylesheet" id="human-style-css3" href="http://blog.codeg.cn/wp-content/themes/hueman-child/user.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="public/font/hack/css/hack.min.css">
+
+<script type="text/javascript" src="assets/js/jquery-2.1.1.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/jquery.jplayer.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/scripts.js"></script>
+<script type="text/javascript" src="assets/picturefill/picturefill.min.js"></script>
+<script type="text/javascript" src="assets/js/jquery.matchHeight-min.js"></script>
+<script type="text/javascript" async defer src="assets/js/myblog.js"></script>
+
+
+    
+    <script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?16a8034e97e7943d9bd7f7310a59a7d8";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+
+
+    
+    <script src="http://s4.cnzz.com/z_stat.php?id=1253999623&web_id=1253999623" language="JavaScript"></script>
+</head>
+
+<body class="single single-post single-format-standard col-3cm full-width topbar-enabled chrome">
+<div id="wrapper">
+  <header id="header">
+
+  <nav class="nav-container group" id="nav-topbar">
+    <div class="nav-toggle"><i class="fa fa-bars"></i></div>
+    <div class="nav-text"></div>
+    <div class="nav-wrap container">
+      <a rel="nofollow" href="http://blog.codeg.cn/" class="nav-cs-icon">
+        <img width="40" height="40" src="http://blog.codeg.cn/public/codeg.jpg" alt="codeg" title="Home">
+      </a>
+      <ul id="menu-default-menu" class="nav container-inner group">
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/">首页</a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/post/">技术文章</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/about/">关于我</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/feed.xml" type="application/rss+xml" target="_blank">订阅</a>
+        </li>
+        <li class="menu-item menu-item-type-post_type menu-item-text">
+        聪明的解释器
+        </li>
+      </ul>
+    </div>
+
+    <div class="container">
+      <div class="container-inner">
+        <div class="toggle-search"><i class="fa fa-search"></i></div>
+        <div class="search-expand">
+          <div class="search-expand-inner">
+            <form method="get" class="searchform themeform" action="https://www.so.com/s">
+              <div>
+                <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+
+  </nav>
+  
+
+  <div class="container group">
+    <div class="container-inner">
+
+      <div class="group pad">
+
+        <div class="group pad">
+          <h1 class="site-title">
+            <a rel="nofollow" href="http://blog.codeg.cn/" rel="home">
+              <img style="border-radius: 50%;width:72px;height:72px;margin:0 auto;" alt="codeg" src="http://blog.codeg.cn/public/codeg.jpg"></img>
+              CodeG Blog
+            </a>
+          </h1>
+          <p class="site-description"> 思路决定出路，态度决定高度。 </p>
+        </div>
+
+      </div>
+    </div>
+    
+  </div>
+  
+
+</header>
+
+
+
+  <div class="container" id="page">
+    <div class="container-inner">
+      <div class="main">
+        <div class="main-inner group">
+          <section class="content">
+            <div class="page-title pad group">
+              <ul class="meta-single group">
+                
+                <li class="category">
+                  <a href="http://blog.codeg.cn/categories/blog/" rel="category tag">blog</a>
+                </li>
+                
+              </ul>
+            </div>
+
+            <div class="pad group">
+
+              <article
+                  class="post type-post status-publish format-standard has-post-thumbnail hentry category-australien tag-bondi-beach tag-city2surf tag-sydney">
+                <div class="post-inner group">
+
+                  <h1 class="post-title">Golang源码阅读</h1>
+
+                  <p class="post-byline">
+                    By <a target="_blank" href="http://blog.codeg.cn/">CodeG</a> · 2014年12月28日 · 1670 Words ·
+                    ~4min reading time |
+                    <a href="https://github.com/zieckey/blog/edit/master/content/post/blog/2014-12-28-go-source-code-reading.md"
+                       target="_blank">编辑这个页面</a>
+                    | Tags:
+                    
+                    <a rel="tag" href="http://blog.codeg.cn/tags/golang">Golang</a>
+                    
+                  </p>
+
+                  <div class="clear"></div>
+
+                  <div class="entry">
+
+                    <div style="border: 1px dashed #e0e0e0; padding: 10px 10px 10px 10px; background-color: #fffeee; background-repeat: no-repeat; background-attachment: scroll; background-position: 1% 50%; -moz-background-size: auto auto; -moz-background-clip: -moz-initial; -moz-background-origin: -moz-initial; -moz-background-inline-policy: -moz-initial;">
+                      
+                      
+                      
+                      
+                      <div>
+                        
+                        
+                        
+                        
+                        本文 <a target="_blank" href="http://blog.codeg.cn/2014/12/28/go-source-code-reading/">http://blog.codeg.cn/2014/12/28/go-source-code-reading/</a> 是作者<a target="_blank" href="http://blog.codeg.cn/">CodeG</a>在研究和学习相关内容时所做的笔记，欢迎广大朋友指正和交流！
+                        版权所有，欢迎转载和分享，但请保留此段声明。 </p>
+                      </div>
+
+                    </div>
+
+                    <div class="entry-inner">
+                      
+
+<h2 id="总览:ea55c4e3e3734fe0ee3946f47ab1a6e8">总览</h2>
+
+<ol>
+<li><code>src/cmd/dist/buf.c</code> 该文件提供两个数据结构：Buf、Vec，分别用来取代<code>char*</code>和<code>char**</code>的相关操作。Buf和Vec这两个数据结构非常简单易懂，其他C语言项目如有需要，可以比较方便的拿过去使用，因此记录在此。</li>
+<li><code>src/lib9/cleanname.c</code> Unix下的路径压缩功能</li>
+<li><code>cmd/dist/windows.c</code> windows平台相关的一些功能函数</li>
+<li><code>src/unicode/utf8/utf8.go</code> utf8编码问题</li>
+<li><code>src/io/pipe.go</code> 进程内的单工管道</li>
+<li><code>src/net/pipe.go</code> 进程内的双工管道</li>
+</ol>
+
+<h2 id="1-src-cmd-dist-buf-c:ea55c4e3e3734fe0ee3946f47ab1a6e8">1. src/cmd/dist/buf.c</h2>
+
+<h3 id="buf定义:ea55c4e3e3734fe0ee3946f47ab1a6e8">Buf定义</h3>
+
+<pre><code class="language-c">// A Buf is a byte buffer, like Go's []byte.
+typedef struct Buf Buf;
+struct Buf
+{
+	char *p;
+	int len;
+	int cap;
+};
+</code></pre>
+
+<h4 id="对buf结构相关的一些操作:ea55c4e3e3734fe0ee3946f47ab1a6e8">对Buf结构相关的一些操作</h4>
+
+<ul>
+<li><code>void binit(Buf *b)</code> 初始化一个Buf</li>
+<li><code>void breset(Buf *b)</code> 重置Buf，使之长度为0。类似于C++中的<code>std::string::clear()</code>，其数据内存不释放，但数据长度字段设为0</li>
+<li><code>void bfree(Buf *b)</code> 释放掉Buf内部的内存，并调用<code>binit</code>初始化这个Buf</li>
+<li><code>void bgrow(Buf *b, int n)</code> 增长Buf内部的内存，确保至少还能容纳<code>n</code>字节数据</li>
+<li><code>void bwrite(Buf *b, void *v, int n)</code> 将从<code>v</code>地址开始的<code>n</code>字节数据追加写入Buf中。类似于C++中的<code>std::string::append(v,n)</code></li>
+<li><code>void bwritestr(Buf *b, char *p)</code> 将字符串<code>p</code>追加写入Buf中，会自动调用<code>strlen(p)</code>计算<code>p</code>的长度。类似于C++中的<code>std::string::append(p)</code></li>
+<li><code>char* bstr(Buf *b)</code> 返回一个<code>NUL</code>结束的字符串指针，该指针指向Buf内部，外部调用者<strong>不能释放</strong>该指针。类似于C++中的<code>std::string::c_str()</code></li>
+<li><code>char* btake(Buf *b)</code> 返回一个<code>NUL</code>结束的字符串指针，外部调用者<strong>需要自己释放</strong>该指针。</li>
+<li><code>void bwriteb(Buf *dst, Buf *src)</code> 将Buf<code>src</code>追加到<code>dst</code>中，<code>src</code>保持不变。类似于C++中的<code>std::string::append(s)</code></li>
+<li><code>bool bequal(Buf *s, Buf *t)</code> 判断两个Buf是否相等。类似于C++中的<code>std::string::compare(s) == 0</code></li>
+<li><code>void bsubst(Buf *b, char *x, char *y)</code> 使用子串<code>y</code>替换掉Buf中所有的<code>x</code></li>
+</ul>
+
+<h3 id="vec定义:ea55c4e3e3734fe0ee3946f47ab1a6e8">Vec定义</h3>
+
+<pre><code class="language-c">// A Vec is a string vector, like Go's []string.
+typedef struct Vec Vec;
+struct Vec
+{
+	char **p;
+	int len;
+	int cap;
+};
+</code></pre>
+
+<h4 id="对vec结构相关的一些操作:ea55c4e3e3734fe0ee3946f47ab1a6e8">对Vec结构相关的一些操作</h4>
+
+<ul>
+<li><code>void vinit(Vec *b)</code> 初始化一个Vec</li>
+<li><code>void vreset(Vec *b)</code> 重置Vec，使之长度为0。其数据内存全部释放</li>
+<li><code>void vfree(Vec *b)</code> 释放掉Vec内部的内存，并调用<code>vinit</code>初始化这个Vec</li>
+<li><code>void vgrow(Vec *b, int n)</code> 增长Vec内部的内存，确保至少还能容纳<code>n</code>字节数据。内部实现时为了效率考虑，第一次内存分配时确保至少分配64字节。</li>
+<li><code>void vcopy(Vec *dst, char **src, int srclen)</code> 将长度为<code>srclen</code>的字符串数组挨个复制添加到Vec中。</li>
+<li><code>void vadd(Vec *v, char *p)</code> 将字符串<code>p</code>拷贝一份添加到Vec中。</li>
+<li><code>void vaddn(Vec *b, char *p, int n)</code> 将长度为<code>n</code>的字符串<code>p</code>拷贝一份并添加到Vec中。</li>
+<li><code>void vuniq(Vec *v)</code> 对Vec排序，然后去掉重复的元素</li>
+<li><code>void splitlines(Vec *v, char *p)</code> 将字符串<code>p</code>按照<code>\n</code>(如果前面有<code>\r</code>会自动trim掉)分割为多段添加到Vec中。</li>
+<li><code>void splitfields(Vec *v, char *p)</code> 将字符串<code>p</code>按照空格（<code>'\n'、'\t'、'\r'、' '</code>)分割为多段添加到Vec中。</li>
+</ul>
+
+<h2 id="2-src-lib9-cleanname-c:ea55c4e3e3734fe0ee3946f47ab1a6e8">2. src/lib9/cleanname.c</h2>
+
+<p><code>char* cleanname(char *name)</code> 该函数在原地(in place)实现了Unix下的路径压缩功能，能够处理多个 <code>/</code> <code>.</code> <code>..</code>等等组合路径问题。</p>
+
+<h2 id="3-cmd-dist-windows-c:ea55c4e3e3734fe0ee3946f47ab1a6e8">3. cmd/dist/windows.c</h2>
+
+<ul>
+<li><code>Rune</code> 定义 <code>typedef unsigned short Rune</code></li>
+<li><code>static int encoderune(char *buf, Rune r)</code> 将Rune转换utf8格式编码存储到buf中。Unicode/UTF8编码相关可以参考：<a href="http://www.ruanyifeng.com/blog/2007/10/ascii_unicode_and_utf-8.html">http://www.ruanyifeng.com/blog/2007/10/ascii_unicode_and_utf-8.html</a></li>
+<li><code>static int decoderune(Rune *r, char *sbuf)</code> 将utf8编码的数据转换到Rune中</li>
+</ul>
+
+<h2 id="4-src-unicode-utf8-utf8-go:ea55c4e3e3734fe0ee3946f47ab1a6e8">4. src/unicode/utf8/utf8.go</h2>
+
+<ul>
+<li><code>func EncodeRune(p []byte, r rune)</code> int 将Rune转换为utf8格式编码存储到字节数组p中。</li>
+<li><code>func DecodeRune(p []byte) (r rune, size int)</code> 将字节数组p中的第一个utf8编码转换为Rune</li>
+</ul>
+
+<h2 id="5-src-io-pipe-go-进程内的单工管道:ea55c4e3e3734fe0ee3946f47ab1a6e8">5. src/io/pipe.go 进程内的单工管道</h2>
+
+<p>该管道是单工的，一端只能写，另一端只能读。这里提供了两个接口<code>PipeReader</code>和<code>PipeWriter</code>，其底层使用的<code>pipe</code>结构体定义如下：</p>
+
+<pre><code class="language-go">// A pipe is the shared pipe structure underlying PipeReader and PipeWriter.
+type pipe struct {
+	rl    sync.Mutex // 读锁，每次只允许一个消费者(reader)
+	wl    sync.Mutex // 写锁，每次只允许一个生产者(writer)
+	l     sync.Mutex // 整体锁，保护下面所有的成员变量
+	data  []byte     // data remaining in pending write
+	rwait sync.Cond  // waiting reader
+	wwait sync.Cond  // waiting writer
+	rerr  error      // if reader closed, error to give writes
+	werr  error      // if writer closed, error to give reads
+}
+</code></pre>
+
+<p>实现时，使用一个公共的<strong>字节缓冲区</strong>，通过读锁、写锁和整体锁这三把锁对这个缓冲区做好保护，实现在进程内的不同goroutine直接传递数据。</p>
+
+<h2 id="6-src-net-pipe-go-进程内的双工管道:ea55c4e3e3734fe0ee3946f47ab1a6e8">6. src/net/pipe.go 进程内的双工管道</h2>
+
+<p>使用 <code>io.PipeReader</code>和<code>io.PipeWriter</code>组合实现的双工管道，并且实现了<code>net.Conn</code>接口，其底层使用的<code>pipe</code>结构体定义如下：</p>
+
+<pre><code class="language-go">type pipe struct {
+    *io.PipeReader
+    *io.PipeWriter
+}
+</code></pre>
+
+                    </div>
+
+                    
+<div class="bdsharebuttonbox">
+    <a href="#" class="bds_more" data-cmd="more"></a>
+    <a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+    <a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a>
+    <a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a>
+    <a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a>
+    <a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a>
+</div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"24"},"share":{},"image":{"viewList":["weixin","tsina","qzone","renren","tqq"],"viewText":"分享到：","viewSize":"24"},"selectShare":{"bdContainerClass":null,"bdSelectMiniList":["weixin","tsina","qzone","renren","tqq"]}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+
+                    
+
+<div class="ds-thread" data-thread-key="/2014/12/28/go-source-code-reading/" data-title="Golang源码阅读" data-url="http://blog.codeg.cn/2014/12/28/go-source-code-reading/"></div>
+
+
+<script type="text/javascript">
+                    var duoshuoQuery = {short_name:"codeg"};
+                        (function() {
+                            var ds = document.createElement('script');
+                            ds.type = 'text/javascript';ds.async = true;
+                            ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+                            ds.charset = 'UTF-8';
+                            (document.getElementsByTagName('head')[0]
+                             || document.getElementsByTagName('body')[0]).appendChild(ds);
+                        })();
+                    </script>
+
+                    
+                    <div class="clear"></div>
+                  </div>
+                  
+
+                </div>
+                
+              </article>
+              
+              <div class="clear"></div>
+              
+              
+              
+            </div>
+          </section>
+          <div class="sidebar s1">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>Contact:</p>
+      <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+    </div>
+    
+    
+    
+
+
+    <ul class="post-nav group">
+      <li class="next">
+        
+        <a href="http://blog.codeg.cn/2014/12/27/gochart-info/" rel="next">
+          <i class="fa fa-chevron-right"></i>
+          <strong>Next post</strong>
+          <span>发布一个使用简单的绘图工具</span>
+        </a>
+        
+      </li>
+      <li class="previous">
+        
+        <a href="http://blog.codeg.cn/2014/12/30/coveralls-io-configuration-info/" rel="prev">
+          <i class="fa fa-chevron-left"></i>
+          <strong>Previous Post</strong>
+          <span>测试覆盖率工具coveralls.io的配置介绍</span>
+        </a>
+        
+      </li>
+    </ul>
+    <div id="search-2" class="widget widget_search"><h3>Search</h3>
+      <form method="get" class="searchform themeform" action="https://www.so.com/s">
+        <div>
+          <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+        </div>
+      </form>
+    </div>
+  </div>
+  
+</div>
+
+          <div class="sidebar s2">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>More</p>
+    </div>
+    <div id="categories-2" class="widget widget_categories"><h3>Categories</h3>
+      <ul>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer id="footer">
+  <section class="container" id="footer-bottom">
+    <div class="container-inner">
+      <a id="back-to-top" href="#"><i class="fa fa-angle-up"></i></a>
+      <div class="pad group">
+        <div class="grid one-half">
+          <div id="copyright">
+            <p>Copyright © 2016. All Rights Reserved. <br>Powered by
+              <a rel="nofollow" href="http://gohugo.io/" target="_blank">Hugo - the static site generator</a>.
+              <a rel="nofollow" href="http://golang.org" target="_blank">#golang</a>.
+            </p>
+          </div>
+          
+        </div>
+        
+        <div class="grid one-half last">
+          <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+        </div>
+      </div>
+
+    </div>
+    
+  </section>
+  
+</footer>
+
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-10147768-2', 'auto');
+  ga('send', 'pageview');
+
+  $('#messagesbsb').remove();
+
+</script>
+</body>
+</html>
+

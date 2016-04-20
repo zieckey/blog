@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <base href="http://blog.codeg.cn/">
+    <script>
+    document._writeOriginal = document.write;
+    document.write = function(str) {
+        if (str.indexOf('livereload.js') > -1) {
+            document._writeOriginal(str);
+        } else {
+            document._writeOriginal('<!-- Be Hijack!! -->');
+        }
+    }
+
+    </script>
+    <title>Nginx源码研究（3）——Nginx数组ngx_array_t和示例 - CodeG Blog</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+<meta name="description" content="本文主要介绍Nginx数组ngx_array_t这一重要的数据结构的使用方法和具体实现。">
+<meta name="author" content="zieckey">
+<meta name="publisher" content="zieckey">
+<meta name="generator" content="http://gohugo.io/"/>
+
+<meta itemprop="name" content="Nginx源码研究（3）——Nginx数组ngx_array_t和示例 - CodeG Blog">
+<meta itemprop="description" content="本文主要介绍Nginx数组ngx_array_t这一重要的数据结构的使用方法和具体实现。">
+<meta itemprop="image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+<meta property="og:title" content="Nginx源码研究（3）——Nginx数组ngx_array_t和示例 - CodeG Blog" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://blog.codeg.cn/2015/01/03/ngx_array_t/" />
+<meta property="og:image" content="http://blog.codeg.cn/public/codeg.jpg" />
+<meta property="og:description" content="本文主要介绍Nginx数组ngx_array_t这一重要的数据结构的使用方法和具体实现。">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@zieckey">
+<meta name="twitter:title" content="Nginx源码研究（3）——Nginx数组ngx_array_t和示例 - CodeG Blog">
+<meta name="twitter:description" content="本文主要介绍Nginx数组ngx_array_t这一重要的数据结构的使用方法和具体实现。">
+<meta name="twitter:creator" content="@zieckey">
+<meta name="twitter:image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+    <script>document.documentElement.className = document.documentElement.className.replace("no-js", "js");</script>
+    <link rel="canonical" href="http://blog.codeg.cn/2015/01/03/ngx_array_t/">
+    <link rel='shortlink' href="http://blog.codeg.cn/2015/01/03/ngx_array_t/"/>
+    <link rel="shortcut icon" href="http://blog.codeg.cn/public/favicon.ico"/>
+    
+<link rel="stylesheet" id="human-style-css" href="http://blog.codeg.cn/wp-content/themes/hueman/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="human-style-css2" href="http://blog.codeg.cn/wp-content/themes/hueman-child/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="responsive-css" href="http://blog.codeg.cn/wp-content/themes/hueman/responsive.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="font-awesome-css" href="http://blog.codeg.cn/wp-content/themes/hueman/fonts/font-awesome.min.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="http://blog.codeg.cn/public/highlight/styles/github.css">
+<script src="http://blog.codeg.cn/public/highlight/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<link rel="stylesheet" id="human-style-css3" href="http://blog.codeg.cn/wp-content/themes/hueman-child/user.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="public/font/hack/css/hack.min.css">
+
+<script type="text/javascript" src="assets/js/jquery-2.1.1.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/jquery.jplayer.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/scripts.js"></script>
+<script type="text/javascript" src="assets/picturefill/picturefill.min.js"></script>
+<script type="text/javascript" src="assets/js/jquery.matchHeight-min.js"></script>
+<script type="text/javascript" async defer src="assets/js/myblog.js"></script>
+
+
+    
+    <script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?16a8034e97e7943d9bd7f7310a59a7d8";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+
+
+    
+    <script src="http://s4.cnzz.com/z_stat.php?id=1253999623&web_id=1253999623" language="JavaScript"></script>
+</head>
+
+<body class="single single-post single-format-standard col-3cm full-width topbar-enabled chrome">
+<div id="wrapper">
+  <header id="header">
+
+  <nav class="nav-container group" id="nav-topbar">
+    <div class="nav-toggle"><i class="fa fa-bars"></i></div>
+    <div class="nav-text"></div>
+    <div class="nav-wrap container">
+      <a rel="nofollow" href="http://blog.codeg.cn/" class="nav-cs-icon">
+        <img width="40" height="40" src="http://blog.codeg.cn/public/codeg.jpg" alt="codeg" title="Home">
+      </a>
+      <ul id="menu-default-menu" class="nav container-inner group">
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/">首页</a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/post/">技术文章</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/about/">关于我</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/feed.xml" type="application/rss+xml" target="_blank">订阅</a>
+        </li>
+        <li class="menu-item menu-item-type-post_type menu-item-text">
+        聪明的解释器
+        </li>
+      </ul>
+    </div>
+
+    <div class="container">
+      <div class="container-inner">
+        <div class="toggle-search"><i class="fa fa-search"></i></div>
+        <div class="search-expand">
+          <div class="search-expand-inner">
+            <form method="get" class="searchform themeform" action="https://www.so.com/s">
+              <div>
+                <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+
+  </nav>
+  
+
+  <div class="container group">
+    <div class="container-inner">
+
+      <div class="group pad">
+
+        <div class="group pad">
+          <h1 class="site-title">
+            <a rel="nofollow" href="http://blog.codeg.cn/" rel="home">
+              <img style="border-radius: 50%;width:72px;height:72px;margin:0 auto;" alt="codeg" src="http://blog.codeg.cn/public/codeg.jpg"></img>
+              CodeG Blog
+            </a>
+          </h1>
+          <p class="site-description"> 思路决定出路，态度决定高度。 </p>
+        </div>
+
+      </div>
+    </div>
+    
+  </div>
+  
+
+</header>
+
+
+
+  <div class="container" id="page">
+    <div class="container-inner">
+      <div class="main">
+        <div class="main-inner group">
+          <section class="content">
+            <div class="page-title pad group">
+              <ul class="meta-single group">
+                
+                <li class="category">
+                  <a href="http://blog.codeg.cn/categories/blog/" rel="category tag">blog</a>
+                </li>
+                
+              </ul>
+            </div>
+
+            <div class="pad group">
+
+              <article
+                  class="post type-post status-publish format-standard has-post-thumbnail hentry category-australien tag-bondi-beach tag-city2surf tag-sydney">
+                <div class="post-inner group">
+
+                  <h1 class="post-title">Nginx源码研究（3）——Nginx数组ngx_array_t和示例</h1>
+
+                  <p class="post-byline">
+                    By <a target="_blank" href="http://blog.codeg.cn/">CodeG</a> · 2015年01月03日 · 1042 Words ·
+                    ~3min reading time |
+                    <a href="https://github.com/zieckey/blog/edit/master/content/post/blog/2015-01-03-ngx_array_t.md"
+                       target="_blank">编辑这个页面</a>
+                    | Tags:
+                    
+                    <a rel="tag" href="http://blog.codeg.cn/tags/nginx">Nginx</a>
+                    
+                    <a rel="tag" href="http://blog.codeg.cn/tags/%e7%bd%91%e7%bb%9c%e7%bc%96%e7%a8%8b">网络编程</a>
+                    
+                  </p>
+
+                  <div class="clear"></div>
+
+                  <div class="entry">
+
+                    <div style="border: 1px dashed #e0e0e0; padding: 10px 10px 10px 10px; background-color: #fffeee; background-repeat: no-repeat; background-attachment: scroll; background-position: 1% 50%; -moz-background-size: auto auto; -moz-background-clip: -moz-initial; -moz-background-origin: -moz-initial; -moz-background-inline-policy: -moz-initial;">
+                      
+                      
+                      
+                      
+                      <div>
+                        
+                        
+                        
+                        
+                        本文 <a target="_blank" href="http://blog.codeg.cn/2015/01/03/ngx_array_t/">http://blog.codeg.cn/2015/01/03/ngx_array_t/</a> 是作者<a target="_blank" href="http://blog.codeg.cn/">CodeG</a>在研究和学习相关内容时所做的笔记，欢迎广大朋友指正和交流！
+                        版权所有，欢迎转载和分享，但请保留此段声明。 </p>
+                      </div>
+
+                    </div>
+
+                    <div class="entry-inner">
+                      
+
+<p>本文主要介绍Nginx数组<code>ngx_array_t</code>这一重要的数据结构的使用方法和具体实现。</p>
+
+<p><code>ngx_array_t</code>是nginx内部使用的数组结构。nginx的数组结构在存储上与大家认知的C语言内置的数组有相似性，比如实际上存储数据的区域也是一大块连续的内存。但是数组除了存储数据的内存以外还包含一些元信息来描述相关的一些信息。ngx_array_t的定义位于<code>src/core/ngx_array.{c,h}</code>里面。</p>
+
+<p>ngx_array.h实现和注释如下：</p>
+
+<pre><code class="language-c">#include &lt;ngx_config.h&gt;
+#include &lt;ngx_core.h&gt;
+
+// 动态数组
+struct ngx_array_s {
+    // elts指向数组的首地址
+    void        *elts; 
+    // nelts是数组中已经使用的元素个数
+    ngx_uint_t   nelts; 
+    // 每个数组元素占用的内存大小
+    size_t       size;  
+    // 当前数组中能够容纳元素个数的总大小
+    ngx_uint_t   nalloc; 
+    // 内存池对象
+    ngx_pool_t  *pool;  
+};
+
+/*
+从内存池中创建n个元素的数组，元素大小为size
+创建一个新的数组对象，并返回这个对象。
+
+p:	数组分配内存使用的内存池；
+n:	数组的初始容量大小，即在不扩容的情况下最多可以容纳的元素个数。
+size:	单个元素的大小，单位是字节。
+
+注意事项: 由于使用ngx_palloc分配内存，数组在扩容时，旧的内存不会被释放，会造成内存的浪费。
+因此，最好能提前规划好数组的容量，在创建或者初始化的时候一次搞定，避免多次扩容，造成内存浪费。
+ */
+ngx_array_t *ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size);
+
+// 销毁该数组对象，并释放其分配的内存回内存池。
+void ngx_array_destroy(ngx_array_t *a);
+
+// 在数组a上新追加一个元素，并返回指向新元素的指针。
+// 需要把返回的指针使用类型转换，转换为具体的类型，然后再给新元素本身或者是各字段（如果数组的元素是复杂类型）赋值。
+// 如果数组已满，则重新分配两倍（nalloc*size)的内存空间，且nalloc更新为2*nalloc
+void *ngx_array_push(ngx_array_t *a);
+
+// 返回将要添加n个元素到数组中其首个元素的地址
+void *ngx_array_push_n(ngx_array_t *a, ngx_uint_t n);
+
+
+// 如果一个数组对象是被分配在堆上的，那么当调用ngx_array_destroy销毁以后，如果想再次使用，就可以调用此函数。
+// 如果一个数组对象是被分配在栈上的，那么就需要调用此函数，进行初始化的工作以后，才可以使用。
+static ngx_inline ngx_int_t
+ngx_array_init(ngx_array_t *array, ngx_pool_t *pool, ngx_uint_t n, size_t size)
+{
+    /*
+     * set &quot;array-&gt;nelts&quot; before &quot;array-&gt;elts&quot;, otherwise MSVC thinks
+     * that &quot;array-&gt;nelts&quot; may be used without having been initialized
+     */
+
+    array-&gt;nelts = 0;
+    array-&gt;size = size;
+    array-&gt;nalloc = n;
+    array-&gt;pool = pool;
+
+    array-&gt;elts = ngx_palloc(pool, n * size);
+    if (array-&gt;elts == NULL) {
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
+}
+</code></pre>
+
+<p>测试代码，完整的工程编译请参考 <a href="https://github.com/zieckey/nginx-research">https://github.com/zieckey/nginx-research项目</a></p>
+
+<pre><code class="language-cPP">#include &quot;allinc.h&quot;
+
+struct User {
+    ngx_str_t name;
+    ngx_str_t url;
+    int id;
+};
+
+/*
+* 
+*/
+TEST_UNIT(ngx_array_t) {
+    ngx_array_t* a = ngx_array_create(g_pool, 10, sizeof(User));
+
+    H_TEST_ASSERT(a-&gt;nalloc == 10);
+    H_TEST_ASSERT(a-&gt;size == sizeof(User));
+
+    // Add one element to the array
+    User* u = (User*)ngx_array_push(a);
+    u-&gt;name.data = (u_char*)ngx_pcalloc(g_pool, 32);
+    strcpy((char*)u-&gt;name.data, &quot;CodeG&quot;);
+    u-&gt;name.len = strlen(&quot;CodeG&quot;);
+    ngx_str_set(&amp;u-&gt;url, &quot;http://blog.codeg.cn/2015/01/03/ngx_array_t&quot;);
+    u-&gt;id = 0;
+    H_TEST_ASSERT(a-&gt;nelts == 1);
+    H_TEST_ASSERT(a-&gt;elts == u); // elts指向数组的首地址，因此与第一个数组元素地址相同
+
+    // Add another one element to the array
+    u = (User*)ngx_array_push(a);
+    u-&gt;name.data = (u_char*)ngx_pcalloc(g_pool, 32);
+    strcpy((char*)u-&gt;name.data, &quot;zieckey&quot;);
+    u-&gt;name.len = strlen(&quot;zieckey&quot;);
+    ngx_str_set(&amp;u-&gt;url, &quot;http://blog.codeg.cn/2014/12/13/Hello-CodeG&quot;);
+    u-&gt;id = 1;
+    H_TEST_ASSERT(a-&gt;nelts == 2);
+
+    // Add 3rd element to the array
+    u = (User*)ngx_array_push(a);
+    u-&gt;name.data = (u_char*)ngx_pcalloc(g_pool, 32);
+    strcpy((char*)u-&gt;name.data, &quot;zieckey&quot;);
+    u-&gt;name.len = strlen(&quot;zieckey&quot;);
+    ngx_str_set(&amp;u-&gt;url, &quot;https://github.com/zieckey&quot;);
+    u-&gt;id = 2;
+    H_TEST_ASSERT(a-&gt;nelts == 3);
+
+    // Traversal the array
+    for (ngx_uint_t i = 0; i &lt; a-&gt;nelts; ++i) {
+        u = (User*)((char*)a-&gt;elts + sizeof(User)*i);
+        H_TEST_ASSERT(u-&gt;id == i);
+        printf(&quot;id=%d name=[%s] url=[%s]\n&quot;, u-&gt;id, (char*)u-&gt;name.data, (char*)u-&gt;url.data);
+    }
+}
+
+</code></pre>
+
+<p>上述代码输出如下：</p>
+
+<pre><code>id=0 name=[CodeG] url=[http://blog.codeg.cn/2015/01/03/ngx_array_t]
+id=1 name=[zieckey] url=[http://blog.codeg.cn/2014/12/13/Hello-CodeG]
+id=2 name=[zieckey] url=[https://github.com/zieckey]
+</code></pre>
+
+<h3 id="参考:d14ae2a12d411a07b0fd4916ece1b811">参考：</h3>
+
+<ul>
+<li><a href="http://tengine.taobao.org/book/chapter_02.html#ngx-array-t-100">淘宝：Nginx开发从入门到精通 http://tengine.taobao.org/book/chapter_02.html#ngx-array-t-100</a></li>
+<li><a href="https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.h">nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.h</a></li>
+<li><a href="https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.c">nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.c</a></li>
+</ul>
+
+                    </div>
+
+                    
+<div class="bdsharebuttonbox">
+    <a href="#" class="bds_more" data-cmd="more"></a>
+    <a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+    <a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a>
+    <a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a>
+    <a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a>
+    <a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a>
+</div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"24"},"share":{},"image":{"viewList":["weixin","tsina","qzone","renren","tqq"],"viewText":"分享到：","viewSize":"24"},"selectShare":{"bdContainerClass":null,"bdSelectMiniList":["weixin","tsina","qzone","renren","tqq"]}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+
+                    
+
+<div class="ds-thread" data-thread-key="/2015/01/03/ngx_array_t/" data-title="Nginx源码研究（3）——Nginx数组ngx_array_t和示例" data-url="http://blog.codeg.cn/2015/01/03/ngx_array_t/"></div>
+
+
+<script type="text/javascript">
+                    var duoshuoQuery = {short_name:"codeg"};
+                        (function() {
+                            var ds = document.createElement('script');
+                            ds.type = 'text/javascript';ds.async = true;
+                            ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+                            ds.charset = 'UTF-8';
+                            (document.getElementsByTagName('head')[0]
+                             || document.getElementsByTagName('body')[0]).appendChild(ds);
+                        })();
+                    </script>
+
+                    
+                    <div class="clear"></div>
+                  </div>
+                  
+
+                </div>
+                
+              </article>
+              
+              <div class="clear"></div>
+              
+              
+              
+            </div>
+          </section>
+          <div class="sidebar s1">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>Contact:</p>
+      <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+    </div>
+    
+    
+    
+
+
+    <ul class="post-nav group">
+      <li class="next">
+        
+        <a href="http://blog.codeg.cn/2015/01/03/ngx_hash_t/" rel="next">
+          <i class="fa fa-chevron-right"></i>
+          <strong>Next post</strong>
+          <span>Nginx源码研究（4）——hash结构ngx_hash_t</span>
+        </a>
+        
+      </li>
+      <li class="previous">
+        
+        <a href="http://blog.codeg.cn/2015/01/04/ngx_queue_t/" rel="prev">
+          <i class="fa fa-chevron-left"></i>
+          <strong>Previous Post</strong>
+          <span>Nginx源码研究（6）——双向链表结构ngx_queue_t</span>
+        </a>
+        
+      </li>
+    </ul>
+    <div id="search-2" class="widget widget_search"><h3>Search</h3>
+      <form method="get" class="searchform themeform" action="https://www.so.com/s">
+        <div>
+          <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+        </div>
+      </form>
+    </div>
+  </div>
+  
+</div>
+
+          <div class="sidebar s2">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>More</p>
+    </div>
+    <div id="categories-2" class="widget widget_categories"><h3>Categories</h3>
+      <ul>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer id="footer">
+  <section class="container" id="footer-bottom">
+    <div class="container-inner">
+      <a id="back-to-top" href="#"><i class="fa fa-angle-up"></i></a>
+      <div class="pad group">
+        <div class="grid one-half">
+          <div id="copyright">
+            <p>Copyright © 2016. All Rights Reserved. <br>Powered by
+              <a rel="nofollow" href="http://gohugo.io/" target="_blank">Hugo - the static site generator</a>.
+              <a rel="nofollow" href="http://golang.org" target="_blank">#golang</a>.
+            </p>
+          </div>
+          
+        </div>
+        
+        <div class="grid one-half last">
+          <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+        </div>
+      </div>
+
+    </div>
+    
+  </section>
+  
+</footer>
+
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-10147768-2', 'auto');
+  ga('send', 'pageview');
+
+  $('#messagesbsb').remove();
+
+</script>
+</body>
+</html>
+

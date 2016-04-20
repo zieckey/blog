@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <base href="http://blog.codeg.cn/">
+    <script>
+    document._writeOriginal = document.write;
+    document.write = function(str) {
+        if (str.indexOf('livereload.js') > -1) {
+            document._writeOriginal(str);
+        } else {
+            document._writeOriginal('<!-- Be Hijack!! -->');
+        }
+    }
+
+    </script>
+    <title>源码阅读-悟空搜索引擎 - CodeG Blog</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+<meta name="description" content="悟空开源项目是用Go语言编写的全文搜索引擎。它不是一个完整的搜索引擎，是一个容易被修改的、能融入你的业务需求的基础代码，这些代码只实现基本功能，同时也足够精简，让你能了然于心，可以快速修改实现你想要的功能。">
+<meta name="author" content="zieckey">
+<meta name="publisher" content="zieckey">
+<meta name="generator" content="http://gohugo.io/"/>
+
+<meta itemprop="name" content="源码阅读-悟空搜索引擎 - CodeG Blog">
+<meta itemprop="description" content="悟空开源项目是用Go语言编写的全文搜索引擎。它不是一个完整的搜索引擎，是一个容易被修改的、能融入你的业务需求的基础代码，这些代码只实现基本功能，同时也足够精简，让你能了然于心，可以快速修改实现你想要的功能。">
+<meta itemprop="image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+<meta property="og:title" content="源码阅读-悟空搜索引擎 - CodeG Blog" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/" />
+<meta property="og:image" content="http://blog.codeg.cn/public/codeg.jpg" />
+<meta property="og:description" content="悟空开源项目是用Go语言编写的全文搜索引擎。它不是一个完整的搜索引擎，是一个容易被修改的、能融入你的业务需求的基础代码，这些代码只实现基本功能，同时也足够精简，让你能了然于心，可以快速修改实现你想要的功能。">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@zieckey">
+<meta name="twitter:title" content="源码阅读-悟空搜索引擎 - CodeG Blog">
+<meta name="twitter:description" content="悟空开源项目是用Go语言编写的全文搜索引擎。它不是一个完整的搜索引擎，是一个容易被修改的、能融入你的业务需求的基础代码，这些代码只实现基本功能，同时也足够精简，让你能了然于心，可以快速修改实现你想要的功能。">
+<meta name="twitter:creator" content="@zieckey">
+<meta name="twitter:image" content="http://blog.codeg.cn/public/codeg.jpg">
+
+    <script>document.documentElement.className = document.documentElement.className.replace("no-js", "js");</script>
+    <link rel="canonical" href="http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/">
+    <link rel='shortlink' href="http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/"/>
+    <link rel="shortcut icon" href="http://blog.codeg.cn/public/favicon.ico"/>
+    
+<link rel="stylesheet" id="human-style-css" href="http://blog.codeg.cn/wp-content/themes/hueman/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="human-style-css2" href="http://blog.codeg.cn/wp-content/themes/hueman-child/style.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="responsive-css" href="http://blog.codeg.cn/wp-content/themes/hueman/responsive.css" type="text/css" media="all"/>
+<link rel="stylesheet" id="font-awesome-css" href="http://blog.codeg.cn/wp-content/themes/hueman/fonts/font-awesome.min.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="http://blog.codeg.cn/public/highlight/styles/github.css">
+<script src="http://blog.codeg.cn/public/highlight/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+<link rel="stylesheet" id="human-style-css3" href="http://blog.codeg.cn/wp-content/themes/hueman-child/user.css" type="text/css" media="all"/>
+<link rel="stylesheet" href="public/font/hack/css/hack.min.css">
+
+<script type="text/javascript" src="assets/js/jquery-2.1.1.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/jquery.jplayer.min.js"></script>
+<script type="text/javascript" src="wp-content/themes/hueman/js/scripts.js"></script>
+<script type="text/javascript" src="assets/picturefill/picturefill.min.js"></script>
+<script type="text/javascript" src="assets/js/jquery.matchHeight-min.js"></script>
+<script type="text/javascript" async defer src="assets/js/myblog.js"></script>
+
+
+    
+    <script>
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?16a8034e97e7943d9bd7f7310a59a7d8";
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+    </script>
+
+
+    
+    <script src="http://s4.cnzz.com/z_stat.php?id=1253999623&web_id=1253999623" language="JavaScript"></script>
+</head>
+
+<body class="single single-post single-format-standard col-3cm full-width topbar-enabled chrome">
+<div id="wrapper">
+  <header id="header">
+
+  <nav class="nav-container group" id="nav-topbar">
+    <div class="nav-toggle"><i class="fa fa-bars"></i></div>
+    <div class="nav-text"></div>
+    <div class="nav-wrap container">
+      <a rel="nofollow" href="http://blog.codeg.cn/" class="nav-cs-icon">
+        <img width="40" height="40" src="http://blog.codeg.cn/public/codeg.jpg" alt="codeg" title="Home">
+      </a>
+      <ul id="menu-default-menu" class="nav container-inner group">
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/">首页</a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/post/">技术文章</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/about/">关于我</a>
+        </li>
+        
+        <li class="menu-item menu-item-type-post_type menu-item-object-page">
+          <a rel="nofollow" href="http://blog.codeg.cn/feed.xml" type="application/rss+xml" target="_blank">订阅</a>
+        </li>
+        <li class="menu-item menu-item-type-post_type menu-item-text">
+        聪明的解释器
+        </li>
+      </ul>
+    </div>
+
+    <div class="container">
+      <div class="container-inner">
+        <div class="toggle-search"><i class="fa fa-search"></i></div>
+        <div class="search-expand">
+          <div class="search-expand-inner">
+            <form method="get" class="searchform themeform" action="https://www.so.com/s">
+              <div>
+                <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+
+  </nav>
+  
+
+  <div class="container group">
+    <div class="container-inner">
+
+      <div class="group pad">
+
+        <div class="group pad">
+          <h1 class="site-title">
+            <a rel="nofollow" href="http://blog.codeg.cn/" rel="home">
+              <img style="border-radius: 50%;width:72px;height:72px;margin:0 auto;" alt="codeg" src="http://blog.codeg.cn/public/codeg.jpg"></img>
+              CodeG Blog
+            </a>
+          </h1>
+          <p class="site-description"> 思路决定出路，态度决定高度。 </p>
+        </div>
+
+      </div>
+    </div>
+    
+  </div>
+  
+
+</header>
+
+
+
+  <div class="container" id="page">
+    <div class="container-inner">
+      <div class="main">
+        <div class="main-inner group">
+          <section class="content">
+            <div class="page-title pad group">
+              <ul class="meta-single group">
+                
+                <li class="category">
+                  <a href="http://blog.codeg.cn/categories/blog/" rel="category tag">blog</a>
+                </li>
+                
+              </ul>
+            </div>
+
+            <div class="pad group">
+
+              <article
+                  class="post type-post status-publish format-standard has-post-thumbnail hentry category-australien tag-bondi-beach tag-city2surf tag-sydney">
+                <div class="post-inner group">
+
+                  <h1 class="post-title">源码阅读-悟空搜索引擎</h1>
+
+                  <p class="post-byline">
+                    By <a target="_blank" href="http://blog.codeg.cn/">CodeG</a> · 2016年02月02日 · 4415 Words ·
+                    ~9min reading time |
+                    <a href="https://github.com/zieckey/blog/edit/master/content/post/blog/2016-02-02-wukong-source-code-reading.md"
+                       target="_blank">编辑这个页面</a>
+                    | Tags:
+                    
+                    <a rel="tag" href="http://blog.codeg.cn/tags/golang">Golang</a>
+                    
+                  </p>
+
+                  <div class="clear"></div>
+
+                  <div class="entry">
+
+                    <div style="border: 1px dashed #e0e0e0; padding: 10px 10px 10px 10px; background-color: #fffeee; background-repeat: no-repeat; background-attachment: scroll; background-position: 1% 50%; -moz-background-size: auto auto; -moz-background-clip: -moz-initial; -moz-background-origin: -moz-initial; -moz-background-inline-policy: -moz-initial;">
+                      
+                      
+                      
+                      
+                      <div>
+                        
+                        
+                        
+                        
+                        本文 <a target="_blank" href="http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/">http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/</a> 是作者<a target="_blank" href="http://blog.codeg.cn/">CodeG</a>在研究和学习相关内容时所做的笔记，欢迎广大朋友指正和交流！
+                        版权所有，欢迎转载和分享，但请保留此段声明。 </p>
+                      </div>
+
+                    </div>
+
+                    <div class="entry-inner">
+                      
+
+<h2 id="一个最简单的例子:89e0d5dad305327940f268393030b521">一个最简单的例子</h2>
+
+<p>我们还是从一个最简单的示例代码开始：</p>
+
+<pre><code class="language-go">package main
+
+import (
+	&quot;github.com/huichen/wukong/engine&quot;
+	&quot;github.com/huichen/wukong/types&quot;
+	&quot;log&quot;
+)
+
+var (
+// searcher是协程安全的
+	searcher = engine.Engine{}
+)
+
+func main() {
+	// 初始化
+	searcher.Init(types.EngineInitOptions{
+		SegmenterDictionaries: &quot;./data/dictionary.txt&quot;})
+	defer searcher.Close()
+
+	// 将文档加入索引
+	searcher.IndexDocument(0, types.DocumentIndexData{Content: &quot;此次百度收购将成中国互联网最大并购&quot;})
+	searcher.IndexDocument(1, types.DocumentIndexData{Content: &quot;百度宣布拟全资收购91无线业务&quot;})
+	searcher.IndexDocument(2, types.DocumentIndexData{Content: &quot;百度是中国最大的搜索引擎&quot;})
+
+	// 等待索引刷新完毕
+	searcher.FlushIndex()
+
+	// 搜索输出格式见types.SearchResponse结构体
+	res := searcher.Search(types.SearchRequest{Text:&quot;百度中国&quot;})
+	log.Printf(&quot;num=%d &quot;, res.NumDocs)
+	for _, d := range res.Docs {
+		log.Printf(&quot;docId=%d&quot;, d.DocId)
+		log.Print(&quot;\tscore:&quot;, d.Scores)
+		log.Print(&quot;\tTokenLocations:&quot;, d.TokenLocations)
+		log.Print(&quot;\tTokenSnippetLocations:&quot;, d.TokenSnippetLocations)
+	}
+}
+</code></pre>
+
+<p>悟空搜索引擎不是一个完整的搜索引擎，我们可以把它当做一个搜索引擎基础库来使用。上面的示例代码是一个最简单的例子，展示了如何使用这个库，非常简单，三步即可完成：</p>
+
+<ol>
+<li>初始化引擎： <code>searcher.Init</code></li>
+<li>将文档加入索引列表中： <code>searcher.IndexDocument</code></li>
+<li>执行搜索任务：<code>searcher.Search</code></li>
+</ol>
+
+<h2 id="悟空搜索引擎内部整体框架图:89e0d5dad305327940f268393030b521">悟空搜索引擎内部整体框架图</h2>
+
+<p>引擎中处理用户请求、分词、索引和排序分别由不同的协程（goroutines）完成。</p>
+
+<ol>
+<li>主协程，用于收发用户请求</li>
+<li>分词器（segmenter）协程，负责分词</li>
+<li>索引器（indexer）协程，负责建立和查找索引表</li>
+<li>排序器（ranker）协程，负责对文档评分排序</li>
+</ol>
+
+<p><img src="http://blog.codeg.cn/images/githubpages/wukong-framework.png" alt="" /></p>
+
+<h2 id="引擎初始化过程:89e0d5dad305327940f268393030b521">引擎初始化过程</h2>
+
+<p>从上面最简单的那个例子可以看出，我们所有的操作都是基于<code>searcher</code>对象（engine.Engine类型），初始化引擎、将文档加入索引列表中、Flush索引列表、执行搜索任务。下面我们详细分析一下初始化过程：</p>
+
+<h4 id="加载分词词典:89e0d5dad305327940f268393030b521">加载分词词典</h4>
+
+<p>有一个参数<code>NotUsingSegmenter</code>可以控制是否加载分词词典。小小吐槽一下：这里没有使用正语义，导致我脑袋需要非非转换，(⊙o⊙)… ，我相信如果使用<code>UsingSegmenter</code>参数的话，应该更好理解一点。</p>
+
+<pre><code class="language-go">	if !options.NotUsingSegmenter {
+		// 载入分词器词典
+		engine.segmenter.LoadDictionary(options.SegmenterDictionaries)
+
+		// 初始化停用词
+		engine.stopTokens.Init(options.StopTokenFile)
+	}
+</code></pre>
+
+<p>分词词典的内部加载过程，可以详细参考 <code>https://github.com/huichen/sego</code> 这个项目，这个可以单独来分析，在这里就不在展开说了。</p>
+
+<h4 id="初始化索引器和排序器:89e0d5dad305327940f268393030b521">初始化索引器和排序器</h4>
+
+<pre><code class="language-go">	for shard := 0; shard &lt; options.NumShards; shard++ {
+		engine.indexers = append(engine.indexers, core.Indexer{})
+		engine.indexers[shard].Init(*options.IndexerInitOptions)
+
+		engine.rankers = append(engine.rankers, core.Ranker{})
+		engine.rankers[shard].Init()
+	}
+</code></pre>
+
+<p><code>options.NumShards</code> 参数可以设置<code>shard</code>(分片，项目作者称之为裂分)个数，根据<code>shard</code>个数来初始化索引器(Indexer)、排序器(Rander)的个数。这里是为了方便并行处理，每一个<code>shard</code>都有一个索引器(Indexer)和排序器(Rander)，并提前初始化好。</p>
+
+<h4 id="初始化分词器通道:89e0d5dad305327940f268393030b521">初始化分词器通道</h4>
+
+<pre><code class="language-go">	engine.segmenterChannel = make(
+		chan segmenterRequest, options.NumSegmenterThreads)
+</code></pre>
+
+<h4 id="初始化索引器通道:89e0d5dad305327940f268393030b521">初始化索引器通道</h4>
+
+<pre><code class="language-go">	engine.indexerAddDocumentChannels = make(
+		[]chan indexerAddDocumentRequest, options.NumShards)
+	engine.indexerRemoveDocChannels = make(
+		[]chan indexerRemoveDocRequest, options.NumShards)
+	engine.indexerLookupChannels = make(
+		[]chan indexerLookupRequest, options.NumShards)
+	for shard := 0; shard &lt; options.NumShards; shard++ {
+		engine.indexerAddDocumentChannels[shard] = make(
+			chan indexerAddDocumentRequest,
+			options.IndexerBufferLength)
+		engine.indexerRemoveDocChannels[shard] = make(
+			chan indexerRemoveDocRequest,
+			options.IndexerBufferLength)
+		engine.indexerLookupChannels[shard] = make(
+			chan indexerLookupRequest,
+			options.IndexerBufferLength)
+	}
+</code></pre>
+
+<p>从这里可以看出索引器(Indexer)有三个功能：将一个文档添加到索引中、将一个文档从索引中移除、从索引中查找一个文档。每一个<code>shard</code>都有独立的<code>channel</code>，互不冲突。</p>
+
+<h4 id="初始化排序器通道:89e0d5dad305327940f268393030b521">初始化排序器通道</h4>
+
+<pre><code class="language-go">	engine.rankerAddDocChannels = make(
+		[]chan rankerAddDocRequest, options.NumShards)
+	engine.rankerRankChannels = make(
+		[]chan rankerRankRequest, options.NumShards)
+	engine.rankerRemoveDocChannels = make(
+		[]chan rankerRemoveDocRequest, options.NumShards)
+	for shard := 0; shard &lt; options.NumShards; shard++ {
+		engine.rankerAddDocChannels[shard] = make(
+			chan rankerAddDocRequest,
+			options.RankerBufferLength)
+		engine.rankerRankChannels[shard] = make(
+			chan rankerRankRequest,
+			options.RankerBufferLength)
+		engine.rankerRemoveDocChannels[shard] = make(
+			chan rankerRemoveDocRequest,
+			options.RankerBufferLength)
+	}
+</code></pre>
+
+<p>与上面类似，从这里可以看出排序器(Rander)有三个功能：将一个文档添加到排序器中、在排序器中进行排序、将一个文档从排序器中移除。每一个<code>shard</code>都有独立的<code>channel</code>，互不冲突。</p>
+
+<h4 id="初始化持久化存储通道:89e0d5dad305327940f268393030b521">初始化持久化存储通道</h4>
+
+<pre><code class="language-go">	if engine.initOptions.UsePersistentStorage {
+		engine.persistentStorageIndexDocumentChannels =
+			make([]chan persistentStorageIndexDocumentRequest,
+				engine.initOptions.PersistentStorageShards)
+		for shard := 0; shard &lt; engine.initOptions.PersistentStorageShards; shard++ {
+			engine.persistentStorageIndexDocumentChannels[shard] = make(
+				chan persistentStorageIndexDocumentRequest)
+		}
+		engine.persistentStorageInitChannel = make(
+			chan bool, engine.initOptions.PersistentStorageShards)
+	}
+</code></pre>
+
+<p>注意：<code>PersistentStorageShards</code>持久化存储的分片数目是独立参数控制的。</p>
+
+<h4 id="启动各个功能协程goroutine:89e0d5dad305327940f268393030b521">启动各个功能协程goroutine</h4>
+
+<ol>
+<li>启动分词器协程</li>
+<li>启动索引器和排序器协程</li>
+<li>启动持久化存储工作协程</li>
+</ol>
+
+<p>至此，所有初始化工作完毕。</p>
+
+<h2 id="索引过程分析:89e0d5dad305327940f268393030b521">索引过程分析</h2>
+
+<p>下面我们来分析索引过程。</p>
+
+<pre><code class="language-go">// 将文档加入索引
+//
+// 输入参数：
+// 	docId	标识文档编号，必须唯一
+//	data	见DocumentIndexData注释
+//
+// 注意：
+//      1. 这个函数是线程安全的，请尽可能并发调用以提高索引速度
+// 	2. 这个函数调用是非同步的，也就是说在函数返回时有可能文档还没有加入索引中，因此
+//         如果立刻调用Search可能无法查询到这个文档。强制刷新索引请调用FlushIndex函数。
+func (engine *Engine) IndexDocument(docId uint64, data types.DocumentIndexData) {
+	engine.internalIndexDocument(docId, data)
+
+	hash := murmur.Murmur3([]byte(fmt.Sprint(&quot;%d&quot;, docId))) % uint32(engine.initOptions.PersistentStorageShards)
+	if engine.initOptions.UsePersistentStorage {
+		engine.persistentStorageIndexDocumentChannels[hash] &lt;- persistentStorageIndexDocumentRequest{docId: docId, data: data}
+	}
+}
+
+func (engine *Engine) internalIndexDocument(docId uint64, data types.DocumentIndexData) {
+	if !engine.initialized {
+		log.Fatal(&quot;必须先初始化引擎&quot;)
+	}
+
+	atomic.AddUint64(&amp;engine.numIndexingRequests, 1)
+	hash := murmur.Murmur3([]byte(fmt.Sprint(&quot;%d%s&quot;, docId, data.Content)))
+	engine.segmenterChannel &lt;- segmenterRequest{
+		docId: docId, hash: hash, data: data}
+}
+</code></pre>
+
+<p>这里需要注意的是，docId参数需要调用者从外部传入，而不是在内部自己创建，这给搜索引擎的实现者更大的自由。
+将文档交给分词器处理，然后根据murmur3计算的hash值模<code>PersistentStorageShards</code>，选择合适的<code>shard</code>写入持久化存储中。</p>
+
+<h3 id="索引过程分析-分词协程处理过程:89e0d5dad305327940f268393030b521">索引过程分析：分词协程处理过程</h3>
+
+<p>分词器协程的逻辑代码在这里：<code>segmenter_worker.go:func (engine *Engine) segmenterWorker()</code></p>
+
+<p>分词器协程的逻辑是一个死循环，不停的从<code>channel engine.segmenterChannel</code>中读取数据，针对每一次读取的数据：</p>
+
+<ol>
+<li>计算<code>shard</code>号</li>
+<li>将文档分词</li>
+<li>根据分词结果，构造<code>indexerAddDocumentRequest</code> 和 <code>rankerAddDocRequest</code></li>
+<li>将<code>indexerAddDocumentRequest</code>投递到<code>channel engine.indexerAddDocumentChannels[shard]</code>中</li>
+<li>将<code>rankerAddDocRequest</code>投递到<code>channel engine.rankerAddDocChannels[shard]</code>中</li>
+</ol>
+
+<p>补充一句：这里<code>shard</code>号的计算过程如下：</p>
+
+<pre><code class="language-go">// 从文本hash得到要分配到的shard
+func (engine *Engine) getShard(hash uint32) int {
+	return int(hash - hash/uint32(engine.initOptions.NumShards)*uint32(engine.initOptions.NumShards))
+}
+</code></pre>
+
+<p>为什么不是直接取模呢？</p>
+
+<h3 id="索引过程分析-索引器协程处理过程:89e0d5dad305327940f268393030b521">索引过程分析：索引器协程处理过程</h3>
+
+<p>首先介绍一下倒排索引表，这是搜索引擎的核心数据结构。</p>
+
+<pre><code class="language-go">// 索引器
+type Indexer struct {
+	// 从搜索键到文档列表的反向索引
+	// 加了读写锁以保证读写安全
+	tableLock struct {
+		sync.RWMutex
+		table map[string]*KeywordIndices
+		docs  map[uint64]bool
+	}
+
+	initOptions types.IndexerInitOptions
+	initialized bool
+
+	// 这实际上是总文档数的一个近似
+	numDocuments uint64
+
+	// 所有被索引文本的总关键词数
+	totalTokenLength float32
+
+	// 每个文档的关键词长度
+	docTokenLengths map[uint64]float32
+}
+
+// 反向索引表的一行，收集了一个搜索键出现的所有文档，按照DocId从小到大排序。
+type KeywordIndices struct {
+	// 下面的切片是否为空，取决于初始化时IndexType的值
+	docIds      []uint64  // 全部类型都有
+	frequencies []float32 // IndexType == FrequenciesIndex
+	locations   [][]int   // IndexType == LocationsIndex
+}
+</code></pre>
+
+<p><code>table map[string]*KeywordIndices</code>这个是核心：一个关键词，对应一个<code>KeywordIndices</code>结构。该结构的<code>docIds</code>字段记录了所有包含这个关键词的文档id。
+如果 IndexType == FrequenciesIndex ，则同时记录这个关键词在该文档中出现次数。
+如果 IndexType == LocationsIndex ，则同时记录这个关键词在该文档中出现的所有位置的起始偏移。</p>
+
+<p>下面是索引的主函数代码：</p>
+
+<pre><code class="language-go">func (engine *Engine) indexerAddDocumentWorker(shard int) {
+	for {
+		request := &lt;-engine.indexerAddDocumentChannels[shard]
+		engine.indexers[shard].AddDocument(request.document)
+		atomic.AddUint64(&amp;engine.numTokenIndexAdded,
+			uint64(len(request.document.Keywords)))
+		atomic.AddUint64(&amp;engine.numDocumentsIndexed, 1)
+	}
+}
+</code></pre>
+
+<p>其主要逻辑又封装在<code>func (indexer *Indexer) AddDocument(document *types.DocumentIndex)</code>函数中实现。其逻辑如下：</p>
+
+<ol>
+<li>将倒排索引表加锁</li>
+<li>更新文档关键词的长度加在一起的总和</li>
+<li>查找关键词在倒排索引表中是否存在</li>
+<li>如果不存在，则直接加入到<code>table map[string]*KeywordIndices</code>中</li>
+<li>如果存在<code>KeywordIndices</code>，则使用二分查找该关键词对应的docId是否已经在<code>KeywordIndices.docIds</code>中存在。分两种情况：
+1) docId存在，则更新原有的数据结构。
+2) docId不存在，则插入到<code>KeywordIndices.docIds</code>数组中，同时保持升序排列。</li>
+<li>更新索引过的文章总数</li>
+</ol>
+
+<h3 id="索引过程分析-排序器协程处理过程:89e0d5dad305327940f268393030b521">索引过程分析：排序器协程处理过程</h3>
+
+<p>在新索引文档的过程，排序器的主逻辑如下：</p>
+
+<pre><code class="language-go">func (engine *Engine) rankerAddDocWorker(shard int) {
+	for {
+		request := &lt;-engine.rankerAddDocChannels[shard]
+		engine.rankers[shard].AddDoc(request.docId, request.fields)
+	}
+}
+</code></pre>
+
+<p>进而调用下面的函数</p>
+
+<pre><code class="language-go">// 给某个文档添加评分字段
+func (ranker *Ranker) AddDoc(docId uint64, fields interface{}) {
+	if ranker.initialized == false {
+		log.Fatal(&quot;排序器尚未初始化&quot;)
+	}
+
+	ranker.lock.Lock()
+	ranker.lock.fields[docId] = fields
+	ranker.lock.docs[docId] = true
+	ranker.lock.Unlock()
+}
+</code></pre>
+
+<p>上述函数非常简单，只是将应用层自定义的数据加入到ranker中。</p>
+
+<p>至此索引过程就完成了。简单来讲就是下面两个过程：</p>
+
+<ol>
+<li>将文档分词，得到一堆关键词</li>
+<li>将 关键词-&gt;docId 的对应关系加入到全局的map中(实际上是分了多个shard)</li>
+</ol>
+
+<h2 id="搜索过程分析:89e0d5dad305327940f268393030b521">搜索过程分析</h2>
+
+<p>下面我们来分析一下搜索的过程。首先构造一个<code>SearchRequest</code>对象。一般情况下只需提供<code>SearchRequest.Text</code>即可。</p>
+
+<pre><code class="language-go">type SearchRequest struct {
+	// 搜索的短语（必须是UTF-8格式），会被分词
+	// 当值为空字符串时关键词会从下面的Tokens读入
+	Text string
+
+	// 关键词（必须是UTF-8格式），当Text不为空时优先使用Text
+	// 通常你不需要自己指定关键词，除非你运行自己的分词程序
+	Tokens []string
+
+	// 文档标签（必须是UTF-8格式），标签不存在文档文本中，但也属于搜索键的一种
+	Labels []string
+
+	// 当不为nil时，仅从这些DocIds包含的键中搜索（忽略值）
+	DocIds map[uint64]bool
+
+	// 排序选项
+	RankOptions *RankOptions
+
+	// 超时，单位毫秒（千分之一秒）。此值小于等于零时不设超时。
+	// 搜索超时的情况下仍有可能返回部分排序结果。
+	Timeout int
+
+	// 设为true时仅统计搜索到的文档个数，不返回具体的文档
+	CountDocsOnly bool
+
+	// 不排序，对于可在引擎外部（比如客户端）排序情况适用
+	// 对返回文档很多的情况打开此选项可以有效节省时间
+	Orderless bool
+}
+</code></pre>
+
+<p>从本文一开始那段示例代码的搜索语句读起：<code>searcher.Search(types.SearchRequest{Text:&quot;百度中国&quot;})</code>。进入到 Search 函数内部，其逻辑如下：</p>
+
+<h3 id="设置一些搜索选项:89e0d5dad305327940f268393030b521">设置一些搜索选项</h3>
+
+<p>例如排序选项<code>RankOptions</code>, 分数计算条件<code>ScoringCriteria</code>等等</p>
+
+<h3 id="将搜索词进行分词:89e0d5dad305327940f268393030b521">将搜索词进行分词</h3>
+
+<pre><code class="language-go">	// 收集关键词
+	tokens := []string{}
+	if request.Text != &quot;&quot; {
+		querySegments := engine.segmenter.Segment([]byte(request.Text))
+		for _, s := range querySegments {
+			token := s.Token().Text()
+			if !engine.stopTokens.IsStopToken(token) {
+				tokens = append(tokens, s.Token().Text())
+			}
+		}
+	} else {
+		for _, t := range request.Tokens {
+			tokens = append(tokens, t)
+		}
+	}
+
+</code></pre>
+
+<p>这里的&rdquo;百度中国&rdquo;会分词得到两个词：<code>百度</code> 和<code>中国</code></p>
+
+<h3 id="向索引器发送查找请求:89e0d5dad305327940f268393030b521">向索引器发送查找请求</h3>
+
+<pre><code class="language-go">	// 建立排序器返回的通信通道
+	rankerReturnChannel := make(
+		chan rankerReturnRequest, engine.initOptions.NumShards)
+
+	// 生成查找请求
+	lookupRequest := indexerLookupRequest{
+		countDocsOnly:       request.CountDocsOnly,
+		tokens:              tokens,
+		labels:              request.Labels,
+		docIds:              request.DocIds,
+		options:             rankOptions,
+		rankerReturnChannel: rankerReturnChannel,
+		orderless:           request.Orderless,
+	}
+
+	// 向索引器发送查找请求
+	for shard := 0; shard &lt; engine.initOptions.NumShards; shard++ {
+		engine.indexerLookupChannels[shard] &lt;- lookupRequest
+	}
+</code></pre>
+
+<p>这里是否可以进行优化？ 1) 只向特定的shard分发请求，避免无谓的indexer查找过程。2) <code>rankerReturnChannel</code>是否不用每次都创建新的？</p>
+
+<h3 id="读取索引器的返回结果然后排序:89e0d5dad305327940f268393030b521">读取索引器的返回结果然后排序</h3>
+
+<p>上面已经建立了结果的返回通道<code>rankerReturnChannel</code>，直接从个<code>channel</code>中读取返回数据，并加入到数组<code>rankOutput</code>中。
+注意，如果设置了超时，就在超时之前能读取多少就读多少。
+然后调用排序算法进行排序。排序算法直接调用Golang自带的<code>sort</code>包的排序算法。</p>
+
+<p>下面我们深入到索引器，看看索引器是如何进行搜索的。其核心代码在这里<code>func (engine *Engine) indexerLookupWorker(shard int)</code>，它的主逻辑是一个死循环，不断的从<code>engine.indexerLookupChannels[shard]</code>读取搜索请求。</p>
+
+<p>针对每一个搜索请求，会将请求分发到索引器去，调用<code>func (indexer *Indexer) Lookup(tokens []string, labels []string, docIds map[uint64]bool, countDocsOnly bool) (docs []types.IndexedDocument, numDocs int)</code>方法。其主要逻辑如下：</p>
+
+<ol>
+<li>将分词和标签合并在一起进行搜索</li>
+<li>合并搜索到的docId，并进行初步排序，将docId大的排在前面(实际上是认为docId越大，时间越近，时效性越好)</li>
+<li>然后进行排序，BM25算法</li>
+<li>最后返回数据</li>
+</ol>
+
+<h2 id="参考文献:89e0d5dad305327940f268393030b521">参考文献</h2>
+
+<ol>
+<li><a href="https://github.com/huichen/wukong">悟空搜索引擎项目源码：https://github.com/huichen/wukong</a></li>
+<li><a href="https://github.com/huichen/wukong/blob/master/docs/codelab.md">悟空引擎入门教程</a></li>
+<li><a href="https://ayende.com/blog/171745/code-reading-wukong-full-text-search-engine">Code reading: Wukong full-text search engine</a></li>
+</ol>
+
+                    </div>
+
+                    
+<div class="bdsharebuttonbox">
+    <a href="#" class="bds_more" data-cmd="more"></a>
+    <a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+    <a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a>
+    <a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a>
+    <a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a>
+    <a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a>
+</div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"24"},"share":{},"image":{"viewList":["weixin","tsina","qzone","renren","tqq"],"viewText":"分享到：","viewSize":"24"},"selectShare":{"bdContainerClass":null,"bdSelectMiniList":["weixin","tsina","qzone","renren","tqq"]}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+
+                    
+
+<div class="ds-thread" data-thread-key="/2016/02/02/wukong-source-code-reading/" data-title="源码阅读-悟空搜索引擎" data-url="http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/"></div>
+
+
+<script type="text/javascript">
+                    var duoshuoQuery = {short_name:"codeg"};
+                        (function() {
+                            var ds = document.createElement('script');
+                            ds.type = 'text/javascript';ds.async = true;
+                            ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+                            ds.charset = 'UTF-8';
+                            (document.getElementsByTagName('head')[0]
+                             || document.getElementsByTagName('body')[0]).appendChild(ds);
+                        })();
+                    </script>
+
+                    
+                    <div class="clear"></div>
+                  </div>
+                  
+
+                </div>
+                
+              </article>
+              
+              <div class="clear"></div>
+              
+              
+              
+            </div>
+          </section>
+          <div class="sidebar s1">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>Contact:</p>
+      <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+    </div>
+    
+    
+    
+
+
+    <ul class="post-nav group">
+      <li class="next">
+        
+        <a href="http://blog.codeg.cn/2016/01/27/double-buffering/" rel="next">
+          <i class="fa fa-chevron-right"></i>
+          <strong>Next post</strong>
+          <span>应用双缓冲技术完美解决资源数据优雅无损的热加载问题</span>
+        </a>
+        
+      </li>
+      <li class="previous">
+        
+        <a href="http://blog.codeg.cn/2016/02/05/influxdb-grafana/" rel="prev">
+          <i class="fa fa-chevron-left"></i>
+          <strong>Previous Post</strong>
+          <span>使用grafana&#43;influxdb搭建炫酷的实时可视化监控平台</span>
+        </a>
+        
+      </li>
+    </ul>
+    <div id="search-2" class="widget widget_search"><h3>Search</h3>
+      <form method="get" class="searchform themeform" action="https://www.so.com/s">
+        <div>
+          <input type="text" class="search" name="q" placeholder="Press enter to start searching">
+        </div>
+      </form>
+    </div>
+  </div>
+  
+</div>
+
+          <div class="sidebar s2">
+  <a class="sidebar-toggle" title="Expand Sidebar"><i class="fa icon-sidebar-toggle"></i></a>
+  <div class="sidebar-content">
+    <div class="sidebar-top group">
+      <p>More</p>
+    </div>
+    <div id="categories-2" class="widget widget_categories"><h3>Categories</h3>
+      <ul>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer id="footer">
+  <section class="container" id="footer-bottom">
+    <div class="container-inner">
+      <a id="back-to-top" href="#"><i class="fa fa-angle-up"></i></a>
+      <div class="pad group">
+        <div class="grid one-half">
+          <div id="copyright">
+            <p>Copyright © 2016. All Rights Reserved. <br>Powered by
+              <a rel="nofollow" href="http://gohugo.io/" target="_blank">Hugo - the static site generator</a>.
+              <a rel="nofollow" href="http://golang.org" target="_blank">#golang</a>.
+            </p>
+          </div>
+          
+        </div>
+        
+        <div class="grid one-half last">
+          <ul class="social-links">
+    <li>
+    <a class="social-tooltip" title="On WeiBo"
+        href="http://weibo.com/zieckey" target="_blank">
+        <i class="fa fa-weibo"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On Twitter" rel="nofollow"
+        href="https://twitter.com/zieckey" target="_blank">
+        <i class="fa fa-twitter"></i>
+    </a>
+    </li>
+    <li>
+    <a class="social-tooltip" title="On GitHub"
+        href="https://github.com/zieckey" target="_blank">
+        <i class="fa fa-github"></i>
+    </a>
+    </li>
+    <li>
+        <a class="social-tooltip" title="On WeChat"
+           href="http://blog.codeg.cn/images/githubpages/logo/wechat.qr.png" target="_blank">
+            <i class="fa fa-wechat"></i>
+        </a>
+    </li>
+</ul>
+
+        </div>
+      </div>
+
+    </div>
+    
+  </section>
+  
+</footer>
+
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-10147768-2', 'auto');
+  ga('send', 'pageview');
+
+  $('#messagesbsb').remove();
+
+</script>
+</body>
+</html>
+

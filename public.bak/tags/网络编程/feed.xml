@@ -1,0 +1,1653 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>网络编程 on CodeG Blog</title>
+    <link>http://blog.codeg.cn/tags/%E7%BD%91%E7%BB%9C%E7%BC%96%E7%A8%8B/</link>
+    <description>Recent content in 网络编程 on CodeG Blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-CN</language>
+    <copyright>Copyright (c) 2015. All rights reserved.</copyright>
+    <lastBuildDate>Wed, 17 Jun 2015 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://blog.codeg.cn/tags/%E7%BD%91%E7%BB%9C%E7%BC%96%E7%A8%8B/feed/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>QUIC（Quick UDP Internet Connections）源代码阅读</title>
+      <link>http://blog.codeg.cn/2015/06/17/quic-source-code-reading/</link>
+      <pubDate>Wed, 17 Jun 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/06/17/quic-source-code-reading/</guid>
+      <description>
+
+&lt;h2 id=&#34;类:9242b2796e30fa166be9fac336b73b4a&#34;&gt;类&lt;/h2&gt;
+
+&lt;h3 id=&#34;基础类:9242b2796e30fa166be9fac336b73b4a&#34;&gt;基础类&lt;/h3&gt;
+
+&lt;h4 id=&#34;base:9242b2796e30fa166be9fac336b73b4a&#34;&gt;base&lt;/h4&gt;
+
+&lt;ol&gt;
+&lt;li&gt;Pickle：针对二进制数据进行&lt;code&gt;pack&lt;/code&gt;和&lt;code&gt;unpack&lt;/code&gt;操作&lt;/li&gt;
+&lt;li&gt;MessagePump：消息泵基类，也就是做消息循环用的&lt;/li&gt;
+&lt;li&gt;TimeDelta：一个&lt;code&gt;int64&lt;/code&gt;整型的封装，单位：微妙&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&#34;net:9242b2796e30fa166be9fac336b73b4a&#34;&gt;net&lt;/h4&gt;
+
+&lt;ol&gt;
+&lt;li&gt;IOVector : 对 &lt;code&gt;struct iovec&lt;/code&gt; 的封装。提供了 &lt;code&gt;struct iovec&lt;/code&gt; 相关的读写操作。&lt;/li&gt;
+&lt;li&gt;IPEndPoint：代表一个 &lt;code&gt;IP:Port&lt;/code&gt; 对&lt;/li&gt;
+&lt;li&gt;QuicConfig：Quic相关的配置信息类(与加解密不相关)&lt;/li&gt;
+&lt;li&gt;QuicDataReader：对一段内存数据的读取做了封装，比较方便的读取整数、浮点数、字符串等等。&lt;/li&gt;
+&lt;li&gt;QuicDataWriter：与&lt;code&gt;QuicDataReader&lt;/code&gt;相对，能够比较方便的将整数、浮点数、字符串、IOVector等数据写入到一段内存&lt;code&gt;buffer&lt;/code&gt;中。&lt;/li&gt;
+&lt;li&gt;QuicRandom：随机数产生器。&lt;/li&gt;
+&lt;li&gt;QuicFramerVisitorInterface：关于收到的数据包的处理的函数接口类。&lt;/li&gt;
+&lt;li&gt;QuicDispatcher::QuicFramerVisitor：从&lt;code&gt;QuicFramerVisitorInterface&lt;/code&gt;继承，用于处理QUIC数据包&lt;/li&gt;
+&lt;li&gt;QuicData：对 &lt;code&gt;&amp;lt;char*,size_t&amp;gt;&lt;/code&gt; 这中内存数据的封装。&lt;/li&gt;
+&lt;li&gt;QuicEncryptedPacket：继承自&lt;code&gt;QuicData&lt;/code&gt;，并没有新的接口，只是更明确的表明这是一个Quic加密的报文。&lt;/li&gt;
+&lt;li&gt;QuicDispatcher：数据包处理类
+
+&lt;ol&gt;
+&lt;li&gt;收到一个数据包会调用 &lt;code&gt;QuicDispatcher::ProcessPacket&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;进而会调用 &lt;code&gt;QuicFramer::ProcessPacket&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;&lt;/li&gt;
+&lt;li&gt;QuicTime::Delta：是对 &lt;code&gt;base::TimeDelta&lt;/code&gt; 的封装&lt;/li&gt;
+&lt;li&gt;QuicTime：一个相对的时间点&lt;/li&gt;
+&lt;li&gt;TimeTicks：滴答时间。
+
+&lt;ol&gt;
+&lt;li&gt;TimeTicks::Now()：返回系统启动到当前时间点的&lt;/li&gt;
+&lt;li&gt;TimeTicks::UnixEpoch()：返回Unix时间戳&lt;/li&gt;
+&lt;/ol&gt;&lt;/li&gt;
+&lt;li&gt;QuicAlarm：定时器的抽象类。&lt;/li&gt;
+&lt;li&gt;DeleteSessionsAlarm：删除过期session的定时器。&lt;/li&gt;
+&lt;li&gt;QuicFramer：用于对QUIC数据包的解析和组装。&lt;/li&gt;
+&lt;li&gt;QuicPacketPublicHeader：Quic Public包头。包括 CID，CID长度, reset标记，version标记, 序列化长度，version等。&lt;/li&gt;
+&lt;li&gt;QuicPacketHeader：Quic包头。包括 FEC标记、加密算法标记，加密Hash，序列号，是否是FEC_group，FEC_group等。&lt;/li&gt;
+&lt;li&gt;UDPSocket：UDP socket协议相关类，ReadFrom/SendTo 等等。&lt;code&gt;ReadFrom&lt;/code&gt;的最后一个回调函数是会在读取到数据的时候调用。具体调用点为：&lt;code&gt;UDPSocketLibevent::ReadWatcher::OnFileCanReadWithoutBlocking&lt;/code&gt;。具体平台的实现类有两个：UDPSocketLibevent/UDPSocketWin&lt;/li&gt;
+&lt;li&gt;UDPServerSocket：从&lt;code&gt;DatagramServerSocket&lt;/code&gt;这个接口类继承，并对&lt;code&gt;UDPSocket&lt;/code&gt;进行了封装&lt;/li&gt;
+&lt;li&gt;QuicSimplePerConnectionPacketWriter：与每个连接相关的数据包writer。很多连接可能共享一个&lt;code&gt;QuicServerPacketWriter&lt;/code&gt;，因此当需要向某个连接发送数据时，无法区分该连接。这个类实际上就是&lt;code&gt;QuicServerPacketWriter&lt;/code&gt;和&lt;code&gt;QuicConnection&lt;/code&gt;的一个组合包装。&lt;/li&gt;
+&lt;li&gt;QuicSimpleServerPacketWriter：用来发送数据的。&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&#34;相关源文件:9242b2796e30fa166be9fac336b73b4a&#34;&gt;相关源文件&lt;/h3&gt;
+
+&lt;ol&gt;
+&lt;li&gt;quic_flags.h ： 整个项目相关的全局配置信息，是全局变量。&lt;/li&gt;
+&lt;li&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&#34;源码阅读:9242b2796e30fa166be9fac336b73b4a&#34;&gt;源码阅读&lt;/h3&gt;
+
+&lt;h4 id=&#34;quicpacketpublicheader:9242b2796e30fa166be9fac336b73b4a&#34;&gt;QuicPacketPublicHeader&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;struct QuicPacketPublicHeader {
+  // Universal header. All QuicPacket headers will have a connection_id and
+  // public flags.
+  QuicConnectionId connection_id;
+  QuicConnectionIdLength connection_id_length;
+  bool reset_flag;
+  bool version_flag;
+  QuicSequenceNumberLength sequence_number_length;
+  QuicVersionVector versions;
+};
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;quicpacketheader:9242b2796e30fa166be9fac336b73b4a&#34;&gt;QuicPacketHeader&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;struct QuicPacketHeader {
+  QuicPacketPublicHeader public_header;
+  bool fec_flag;
+  bool entropy_flag;
+  QuicPacketEntropyHash entropy_hash;
+  QuicPacketSequenceNumber packet_sequence_number;
+  InFecGroup is_in_fec_group;
+  QuicFecGroupNumber fec_group;
+};
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;void-quicdispatcher-onunauthenticatedheader-const-quicpacketheader-header:9242b2796e30fa166be9fac336b73b4a&#34;&gt;void QuicDispatcher::OnUnauthenticatedHeader(const QuicPacketHeader&amp;amp; header)&lt;/h4&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>QUIC（Quick UDP Internet Connections）协议简要笔记(翻译)</title>
+      <link>http://blog.codeg.cn/2015/05/08/quic-protocol/</link>
+      <pubDate>Fri, 08 May 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/05/08/quic-protocol/</guid>
+      <description>
+
+&lt;h2 id=&#34;概述:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;概述&lt;/h2&gt;
+
+&lt;h2 id=&#34;动机:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;动机&lt;/h2&gt;
+
+&lt;h3 id=&#34;支持spdy协议的动机:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;支持SPDY协议的动机&lt;/h3&gt;
+
+&lt;h2 id=&#34;目标:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;目标&lt;/h2&gt;
+
+&lt;p&gt;我们希望开发出一套传输协议以支持下列目标：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;在今天的因特网上的广泛的部署能力（例如，能够顺利通过中间路由、可以在不修改内核或提升权限的情况下运行在普通用户客户端机器上）&lt;/li&gt;
+&lt;li&gt;减少因丢包引起的 head-of-line 阻塞 （丢失一个数据包不会对其他的数据流产生影响）&lt;/li&gt;
+&lt;li&gt;低时延
+a. 极大的减少连接启动时延 (通常情况零RTT连接、加密算法协商、初始请求）
+b. 尝试时延前向纠错编码来减少丢包后重传造成的时延&lt;/li&gt;
+&lt;li&gt;在时延和效率方面提供对移动端的支持&lt;/li&gt;
+&lt;li&gt;避免拥塞的支持，跟TCP相比更友好&lt;/li&gt;
+&lt;li&gt;可媲美TLS的隐私数据保证（不需要按顺序的传输或按顺序的解密）&lt;/li&gt;
+&lt;li&gt;在服务器端和客户端双方面都能对可靠及安全的资源要求自动伸缩（包括合理的缓冲区管理和帮助，以避免促进放大的 DoS 攻击）&lt;/li&gt;
+&lt;li&gt;减少带宽消耗和增加通道状态的响应能力（在多路复用的流直接，使用统一的信号信道状态)&lt;/li&gt;
+&lt;li&gt;在不与其他目标相冲突的情况下减少数据包个数&lt;/li&gt;
+&lt;li&gt;为多路复用的流支持可靠的传输（可以模拟 TCP 多路复用的流）&lt;/li&gt;
+&lt;li&gt;在不与其他目标相冲突的情况下，能有效的支持带有demux-mux属性的代理&lt;/li&gt;
+&lt;li&gt;在不会牺牲我们既定的目标情况下，在任何可能的情况下尽量重用或者进化现有协议&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h3 id=&#34;理由和一些启示:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;理由和一些启示&lt;/h3&gt;
+
+&lt;p&gt;摘要：从SPDY得到的经验看，为了不让中间路由设备误解数据包，最好的做法是尽可能的使用加密数据传输。&lt;/p&gt;
+
+&lt;h3 id=&#34;为什么不使用基于-dtls-之上的-sctp:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;为什么不使用基于 DTLS 之上的 SCTP&lt;/h3&gt;
+
+&lt;p&gt;摘要：这个达不到上述3a描述的目标。同时，没有前向纠错功能。&lt;/p&gt;
+
+&lt;h2 id=&#34;期望的-api-接口元素:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;期望的 API 接口元素&lt;/h2&gt;
+
+&lt;h3 id=&#34;api-概念:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;API 概念&lt;/h3&gt;
+
+&lt;p&gt;从最高层来看，我们希望有一种机制能将新来的stream接入到现有的连接中，而不是独立读写不同的连接。&lt;/p&gt;
+
+&lt;h3 id=&#34;流特性:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;流特性&lt;/h3&gt;
+
+&lt;p&gt;我们期望不同流将具有不同的传输特性，可以设置或修改应用程序。这些包括等鲜明特征设置：
+• 可调节冗余级别 （延迟储蓄的贸易带宽）
+• 可调节优先级别 （仿照 SPDY 不断变化的优先次序计划）&lt;/p&gt;
+
+&lt;p&gt;我们期望一些控制通道，可以被看作一个带外流，将始终可用和可用于信号流的其余部分的状态更改。控制信道将可能包括专用帧 （控制帧），作为好保留的流，为加密的谈判。&lt;/p&gt;
+
+&lt;h3 id=&#34;按顺序的数据传输:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;按顺序的数据传输&lt;/h3&gt;
+
+&lt;p&gt;必须提供类似 TCP 按顺序的流式传输模型。&lt;/p&gt;
+
+&lt;p&gt;###　连接状态&lt;/p&gt;
+
+&lt;p&gt;应用程序和实际连接之间分离，使得对连接使用很困难。举个例子，当发送应用程序完成发送功能，它可能试图关闭连接，但数据仍然可能会在本地发送缓冲区中，这样的例子在关闭连接时，可能会导致未定义的行为或终止应用程序。&lt;/p&gt;
+
+&lt;p&gt;为了更好地支持应用程序，必须支持下面的特性：&lt;/p&gt;
+
+&lt;p&gt;1.RTT (当前平滑估计)
+2.数据包大小 （包括所有开销 ； 也不包括开销，只包括有效负载）
+3.带宽 （平滑的当前估计值跨整个连接）
+4.峰值持续带宽 (横跨整个连接）
+5.拥塞窗口大小 （表示数据包中）
+6.队列大小 （已形成，但尚未通过电线发出的数据包）
+7.在队列中的字节数
+8.每个流队列大小 （或字节流或未发送的数据包，每两个概览)&lt;/p&gt;
+
+&lt;h2 id=&#34;quic协议哲学:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;QUIC协议哲学&lt;/h2&gt;
+
+&lt;p&gt;我们需要考虑性能效率，将协议分为四个阶段：  Startup; Steady State; Idle Entry; Idle Departure&lt;/p&gt;
+
+&lt;h3 id=&#34;通过无连接的udp建立连接-克服-nat:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;通过无连接的UDP建立连接：克服 NAT&lt;/h3&gt;
+
+&lt;p&gt;最根本的问题是如何将 UDP 数据报，转变成一种基础的面向连接的协议。由中间设备和防火墙 NAT 服务的不但有可能不协助并更可能是阻碍这一进程，而加剧了这一问题。&lt;/p&gt;
+
+&lt;p&gt;一般而言，NAT 设备会将空闲时间超过30~120秒的udp端口映射解绑定。&lt;/p&gt;
+
+&lt;h4 id=&#34;cid-连接的id-用于唯一识别一个连接:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;CID：连接的ID，用于唯一识别一个连接&lt;/h4&gt;
+
+&lt;p&gt;CID是一个随机串，目前为64比特长。一般而言，CID的确定是通过客户端发给服务器的第一个数据包而提议的。&lt;/p&gt;
+
+&lt;h4 id=&#34;nat-绑定保持连接:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;NAT 绑定保持连接&lt;/h4&gt;
+
+&lt;h5 id=&#34;保持连接-什么时候我们需要这个:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;保持连接：什么时候我们需要这个？&lt;/h5&gt;
+
+&lt;p&gt;当服务端需要向客户端发送消息时，我们需要保持连接。&lt;/p&gt;
+
+&lt;h5 id=&#34;保持连接-需要多久:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;保持连接：需要多久？&lt;/h5&gt;
+
+&lt;p&gt;准确的算法是待定(TBD)。保持连接的超时时间是可以通过协商来确定的。&lt;/p&gt;
+
+&lt;h4 id=&#34;udp报文的分片:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;UDP报文的分片&lt;/h4&gt;
+
+&lt;h3 id=&#34;连接的建立和重连:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;连接的建立和重连&lt;/h3&gt;
+
+&lt;h4 id=&#34;启动阶段的-ddos-攻击:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;启动阶段的 DDOS 攻击&lt;/h4&gt;
+
+&lt;h4 id=&#34;安全证书:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;安全证书&lt;/h4&gt;
+
+&lt;h4 id=&#34;从高层次看连接的场景:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;从高层次看连接的场景&lt;/h4&gt;
+
+&lt;h5 id=&#34;第一次建立连接-通常需要1个rtt-有时需要2个rtts:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;第一次建立连接：通常需要1个RTT，有时需要2个RTTs&lt;/h5&gt;
+
+&lt;p&gt;在此场景中，客户端与服务器建立连接时，其初始化的hello消息表明客户端以前从未连过该服务器，因此它不能指定一个公钥。来自客户端的初始化消息可能包括一些随机值以便加快该会话的协商过程。&lt;/p&gt;
+
+&lt;h5 id=&#34;重复连接-通常需要0个rtt-有时需要1个rtt-极少的情况下需要2个rtts:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;重复连接：通常需要0个RTT，有时需要1个RTT，极少的情况下需要2个RTTs&lt;/h5&gt;
+
+&lt;h3 id=&#34;稳定状态:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;稳定状态&lt;/h3&gt;
+
+&lt;h4 id=&#34;连接结构体:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;连接结构体&lt;/h4&gt;
+
+&lt;h4 id=&#34;安全性-防篡改-隐私-真实性:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;安全性：防篡改、隐私、真实性&lt;/h4&gt;
+
+&lt;h4 id=&#34;数据丢失:2c8f065756daebe8aea7e2aad97fdeee&#34;&gt;数据丢失&lt;/h4&gt;
+
+&lt;p&gt;在整个互联网中，从chrome浏览器的测试数据看，UDP包的丢失率为1~2%。&lt;/p&gt;
+
+&lt;p&gt;Initial experiments with UDP connectivity from browsers around the world
+suggest that roughly 90-95% of users will have adequate UDP connectivity for
+successful QUIC connections. We conjecture that the 5%+ user connectivity
+block is predominantly caused by LAN firewalls, probably in enterprise
+settings.&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>golang网络编程-udp客户端示例代码</title>
+      <link>http://blog.codeg.cn/2015/01/07/golang-udp-client/</link>
+      <pubDate>Wed, 07 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/07/golang-udp-client/</guid>
+      <description>
+
+&lt;h3 id=&#34;最简单的一个客户端:2fcaff2a7f63c6a64af5179c144acbd9&#34;&gt;最简单的一个客户端&lt;/h3&gt;
+
+&lt;p&gt;编程步骤：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;创建一个udp socket并连接服务器&lt;/li&gt;
+&lt;li&gt;发送数据给服务器&lt;/li&gt;
+&lt;li&gt;从服务器接收数据&lt;/li&gt;
+&lt;li&gt;关闭udp socket&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main 
+
+import (
+    &amp;quot;fmt&amp;quot;
+    &amp;quot;net&amp;quot;
+    &amp;quot;os&amp;quot;
+)
+
+func main() {
+	hostport := &amp;quot;10.16.28.17:1053&amp;quot;
+    if len(os.Args) == 2 {
+    	hostport = os.Args[1]
+    }
+   
+    addr, err := net.ResolveUDPAddr(&amp;quot;udp&amp;quot;, hostport)
+    if err != nil {
+        fmt.Println(&amp;quot;server address error. It MUST be a format like this hostname:port&amp;quot;, err)
+        return
+    }
+
+	// Create a udp socket and connect to server        
+    socket, err := net.DialUDP(&amp;quot;udp4&amp;quot;, nil, addr)
+    if err != nil {
+        fmt.Printf(&amp;quot;connect to udpserver %v failed : %v&amp;quot;, addr.String(), err.Error())
+        return
+    }
+    defer socket.Close()
+
+	// send data to server
+    senddata := []byte(&amp;quot;hello server!&amp;quot;)
+    _, err = socket.Write(senddata)
+    if err != nil {
+        fmt.Println(&amp;quot;send data error &amp;quot;, err)
+        return
+    }
+
+	// recv data from server
+    data := make([]byte, 4096)
+    read, remoteAddr, err := socket.ReadFromUDP(data)
+    if err != nil {
+        fmt.Println(&amp;quot;recv data error &amp;quot;, err)
+        return
+    }
+    
+    fmt.Printf(&amp;quot;server addr [%v], response data len:%v [%s]\n&amp;quot;, remoteAddr, read, string(data[:read]))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;udp-benchmark-client:2fcaff2a7f63c6a64af5179c144acbd9&#34;&gt;udp benchmark client&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;bytes&amp;quot;
+	&amp;quot;flag&amp;quot;
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;github.com/funny/overall&amp;quot;
+	&amp;quot;net&amp;quot;
+	&amp;quot;os&amp;quot;
+	&amp;quot;sync&amp;quot;
+	&amp;quot;sync/atomic&amp;quot;
+	&amp;quot;time&amp;quot;
+)
+
+var concurrence = flag.Int(&amp;quot;c&amp;quot;, 1, &amp;quot;Number of multiple requests to make&amp;quot;)
+var numRequest = flag.Int(&amp;quot;n&amp;quot;, 1, &amp;quot;Number of requests to perform&amp;quot;)
+var verbosity = flag.Bool(&amp;quot;v&amp;quot;, false, &amp;quot;How much troubleshooting info to print&amp;quot;)
+var echoVerify = flag.Bool(&amp;quot;e&amp;quot;, false, &amp;quot;the echo mode and verify the response data&amp;quot;)
+var hostPort = flag.String(&amp;quot;h&amp;quot;, &amp;quot;127.0.0.1:1053&amp;quot;, &amp;quot;The hostname and port of the udp server&amp;quot;)
+var messageLen = flag.Int(&amp;quot;l&amp;quot;, 100, &amp;quot;The length of the send message&amp;quot;)
+var timeoutMs = flag.Int(&amp;quot;t&amp;quot;, 100, &amp;quot;The timeout milliseconds&amp;quot;)
+
+type Stat struct {
+	send       int64
+	recv       int64
+	sendsucc   int64
+	sendfail   int64
+	recvsucc   int64
+	recvfail   int64
+	compareerr int64
+}
+
+func (s Stat) dump() string {
+	return fmt.Sprintf(&amp;quot;send:%v recv:%v sendsucc:%v recvsucc:%v compareerr:%v sendfail:%v recvfail:%v&amp;quot;,
+		s.send, s.recv, s.sendsucc, s.recvsucc, s.compareerr, s.sendfail, s.recvfail)
+}
+
+var stat Stat
+
+func main() {
+	flag.Parse()
+	var wg sync.WaitGroup
+	recoder := overall.NewTimeRecoder()
+	for c := 0; c &amp;lt; *concurrence; c++ {
+		go request(&amp;amp;wg, recoder)
+		wg.Add(1)
+	}
+
+	wg.Wait()
+
+	fmt.Println(stat.dump())
+
+	var buf bytes.Buffer
+	recoder.WriteCSV(&amp;amp;buf)
+	fmt.Println(buf.String())
+
+	if stat.compareerr != 0 || stat.recvfail != 0 || stat.sendfail != 0 {
+		os.Exit(1)
+	}
+}
+
+func request(wg *sync.WaitGroup, record *overall.TimeRecoder) {
+	defer wg.Done()
+	
+	addr, err := net.ResolveUDPAddr(&amp;quot;udp&amp;quot;, *hostPort)
+	if err != nil {
+		fmt.Println(&amp;quot;server address error. It MUST be a format like this hostname:port&amp;quot;, err)
+		return
+	}
+
+	// Create a udp socket and connect to server
+	socket, err := net.DialUDP(&amp;quot;udp4&amp;quot;, nil, addr)
+	if err != nil {
+		fmt.Printf(&amp;quot;connect to udpserver %v failed : %v&amp;quot;, addr.String(), err.Error())
+		return
+	}
+	defer socket.Close()
+
+	msg := make([]byte, *messageLen)
+	for i := 0; i &amp;lt; *messageLen; i++ {
+		msg[i] = &#39;a&#39; + byte(i)%26
+	}
+
+	for n := 0; n &amp;lt; *numRequest; n++ {
+		t := time.Now()
+		
+		socket.SetDeadline(t.Add(time.Duration(100 * time.Millisecond)))
+		
+		// send data to server
+		_, err = socket.Write(msg)
+		if err != nil {
+			fmt.Println(&amp;quot;send data error &amp;quot;, err)
+			atomic.AddInt64(&amp;amp;stat.sendfail, 1)
+			return
+		}
+
+		// recv data from server
+		data := make([]byte, 1472)
+		read, remoteAddr, err := socket.ReadFromUDP(data)
+		if err != nil {
+			fmt.Println(&amp;quot;recv data error &amp;quot;, err)
+			atomic.AddInt64(&amp;amp;stat.recvfail, 1)
+			return
+		}
+		data = data[:read]
+		record.Record(&amp;quot;onetrip&amp;quot;, time.Since(t))
+
+		if *verbosity {
+			fmt.Printf(&amp;quot;server addr [%v], response data len:%v [%s]\n&amp;quot;, remoteAddr, read, string(data[:read]))
+		}
+
+		if *echoVerify {
+			if bytes.Compare(data, msg) != 0 {
+				atomic.AddInt64(&amp;amp;stat.compareerr, 1)
+			}
+		}
+
+		atomic.AddInt64(&amp;amp;stat.send, 1)
+		atomic.AddInt64(&amp;amp;stat.recv, 1)
+		atomic.AddInt64(&amp;amp;stat.sendsucc, 1)
+		atomic.AddInt64(&amp;amp;stat.recvsucc, 1)
+	}
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Nginx源码研究（7）——内存池结构ngx_pool_t</title>
+      <link>http://blog.codeg.cn/2015/01/06/ngx_pool_t/</link>
+      <pubDate>Tue, 06 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/06/ngx_pool_t/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:2a838a6ff46ad65c321519a111f1548b&#34;&gt;简介&lt;/h2&gt;
+
+&lt;p&gt;本文主要介绍Nginx内存池结构&lt;code&gt;ngx_pool_t&lt;/code&gt;这一重要的数据结构的使用方法和具体实现。同时为了方便学习和研究，还从&lt;code&gt;ngx_pool_t&lt;/code&gt;抽取了一个完全独立的&lt;code&gt;cg_pool_t&lt;/code&gt;结构，不依赖Nginx，也不依赖任何第三方类库，可以直接将源码拿走集成进现有系统中。&lt;/p&gt;
+
+&lt;p&gt;典型的应用场景是这样的，假如你有一个nginx扩展，用到了ngx_pool_t这个数据结构，但是现在有一个需求是需要将这份扩展代码独立出来，不依赖nginx运行，那么这个&lt;code&gt;cg_pool_t&lt;/code&gt;是你的好帮手，你几乎只需要将头文件从&lt;code&gt;ngx_palloc.h&lt;/code&gt;换为&lt;code&gt;cg_pool.h&lt;/code&gt;即可，代码完全不用修改即可完成移植。&lt;/p&gt;
+
+&lt;p&gt;Nginx的内存池在大量的小块内存的申请和释放的时候，能更快地进行内存分配（对比malloc和free），同时减少内存碎片，防止内存泄露。尤其是在防止内存泄露方面，Nginx的内存池的设计可谓非常巧妙。调用者可以一直在一个&lt;code&gt;ngx_pool_t&lt;/code&gt;上调用ngx_palloc申请内存，而只需在最后释放这个&lt;code&gt;ngx_pool_t&lt;/code&gt;对象即可将中途所有申请的内存统统一块释放掉。从而大大减少内存泄露的可能性，也大大简化c程序的开发逻辑流程。&lt;/p&gt;
+
+&lt;h2 id=&#34;nginx内存池源代码位置:2a838a6ff46ad65c321519a111f1548b&#34;&gt;Nginx内存池源代码位置&lt;/h2&gt;
+
+&lt;p&gt;src/core/ngx_palloc.{h,c}&lt;/p&gt;
+
+&lt;h2 id=&#34;cg-pool-t内存池的源码位置:2a838a6ff46ad65c321519a111f1548b&#34;&gt;cg_pool_t内存池的源码位置&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-research/tree/master/libnginx/pool&#34;&gt;https://github.com/zieckey/nginx-research/tree/master/libnginx/pool&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;源码分析:2a838a6ff46ad65c321519a111f1548b&#34;&gt;源码分析&lt;/h2&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;
+typedef struct ngx_pool_large_s  ngx_pool_large_t;
+//大内存结构
+struct ngx_pool_large_s {
+    ngx_pool_large_t     *next; //下一个大块内存
+    void                 *alloc;//nginx分配的大块内存空间
+};
+
+//该结构用来维护内存池的数据块，供用户分配之用
+typedef struct {
+    u_char               *last;  //当前内存分配结束位置，即下一段可分配内存的起始位置
+    u_char               *end;   //内存池结束位置
+    ngx_pool_t           *next;  //链接到下一个内存池
+    ngx_uint_t            failed;//统计该内存池不能满足分配请求的次数
+} ngx_pool_data_t;
+
+//该结构维护整个内存池的头部信息
+struct ngx_pool_s {
+    ngx_pool_data_t       d;       //数据块
+    size_t                max;     //数据块大小，即小块内存的最大值
+    ngx_pool_t           *current; //保存当前内存值
+    ngx_chain_t          *chain;   //可以挂一个chain结构
+    ngx_pool_large_t     *large;   //分配大块内存用，即超过max的内存请求
+    ngx_pool_cleanup_t   *cleanup; //挂载一些内存池释放的时候，同时释放的资源
+    ngx_log_t            *log;
+};
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;内存结构图:2a838a6ff46ad65c321519a111f1548b&#34;&gt;内存结构图&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_pool_t_xiekeli.png&#34;&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_pool_t_xiekeli.png&#34; alt=&#34;&#34; /&gt;&lt;/a&gt;
+备注：从参考博客5摘录&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_pool_t_rainx.png&#34;&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_pool_t_rainx.png&#34; alt=&#34;&#34; /&gt;&lt;/a&gt;
+备注：从参考文档6摘录&lt;/p&gt;
+
+&lt;h2 id=&#34;测试代码:2a838a6ff46ad65c321519a111f1548b&#34;&gt;测试代码&lt;/h2&gt;
+
+&lt;p&gt;该测试代码的完整工程的编译和运行方式请参考 &lt;a href=&#34;https://github.com/zieckey/nginx-research&#34;&gt;https://github.com/zieckey/nginx-research项目&lt;/a&gt;。Linux&amp;amp;Windows都测试通过。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;TEST_UNIT(ngx_pool) {
+    ngx_pool_t* pool = ngx_create_pool(1024, NULL);
+    char* p = (char*)ngx_palloc(pool, 32);
+    const char* s = &amp;quot;hello world\n&amp;quot;;
+    strcpy(p, s);
+    H_TEST_ASSERT(strcmp(p, s) == 0);
+
+    p = (char*)ngx_palloc(pool, 4096); // alloc a large block
+
+    ngx_destroy_pool(pool);
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;参考:2a838a6ff46ad65c321519a111f1548b&#34;&gt;参考：&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://tengine.taobao.org/book/chapter_02.html#ngx-palloc-t-100&#34;&gt;淘宝：Nginx开发从入门到精通 http://tengine.taobao.org/book/chapter_02.html#ngx-queue-t-100&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_palloc.h&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_palloc.h&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_palloc.c&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_palloc.c&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://blog.csdn.net/v_july_v/article/details/7040425&#34;&gt;Nginx源码剖析之内存池，与内存管理 http://blog.csdn.net/v_july_v/article/details/7040425&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.cnblogs.com/xiekeli/archive/2012/10/17/2727432.html&#34;&gt;nginx源码学习&amp;mdash;-内存池 http://www.cnblogs.com/xiekeli/archive/2012/10/17/2727432.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://code.google.com/p/nginxsrp/wiki/NginxCodeReview&#34;&gt;nginx源码研究 https://code.google.com/p/nginxsrp/wiki/NginxCodeReview&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Nginx源码研究（5）——单向链表结构ngx_list_t</title>
+      <link>http://blog.codeg.cn/2015/01/04/ngx_list_t/</link>
+      <pubDate>Sun, 04 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/04/ngx_list_t/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:b5136761ad8126794030c61cf2f551fa&#34;&gt;简介&lt;/h2&gt;
+
+&lt;p&gt;本文主要介绍Nginx单向链表结构&lt;code&gt;ngx_list_t&lt;/code&gt;这一重要的数据结构的使用方法和具体实现。&lt;/p&gt;
+
+&lt;p&gt;该链表结构与我们常说的链表结构(例如&lt;code&gt;std::list&lt;/code&gt;)不太一样。它虽然符合list类型数据结构的一些特点，比如可以添加元素，实现动态自增长，不会像数组类型的数据结构，受到初始设定的数组容量的限制，但不同点在于它的节点，&lt;code&gt;std::list&lt;/code&gt;每个节点只能存放一个元素，&lt;code&gt;ngx_list_t&lt;/code&gt;的节点却是一个固定大小的数组，可以存放多个元素。当添加元素到这个list里面的时候，会在最尾部的节点里的数组上添加元素，如果这个节点的数组存满了，就再增加一个新的节点到这个list里面去。&lt;/p&gt;
+
+&lt;h2 id=&#34;源代码位置:b5136761ad8126794030c61cf2f551fa&#34;&gt;源代码位置&lt;/h2&gt;
+
+&lt;p&gt;src/core/ngx_list.{h,c}&lt;/p&gt;
+
+&lt;h2 id=&#34;数据结构:b5136761ad8126794030c61cf2f551fa&#34;&gt;数据结构&lt;/h2&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;// ngx_list_part_s是代表ngx_list_t链表的一个节点。
+// 它自身包含了一个数组，用来存放最终的元素
+struct ngx_list_part_s {
+    void             *elts; //链表元素elts数组,数组申请的空间大小为size*nalloc
+    ngx_uint_t        nelts; //当前已使用的elts个数，一定要小于等于nalloc
+    ngx_list_part_t  *next; //指向ngx_list_t中的下个链表part
+};
+
+// ngx_list_t结构是一个链表，链表中每个节点是ngx_list_part_t结构。
+// 而ngx_list_part_t中有个elts是一个数组，储存了任意大小固定的元素，它是由ngx_pool_t分配的连续空间
+typedef struct {
+    ngx_list_part_t  *last; //指向链表中最后一个元素，其作用相当于尾指针。插入新的节点时，从此开始。
+    ngx_list_part_t   part; //链表中第一个元素，其作用相当于头指针。遍历时，从此开始。
+    size_t            size; //链表中每个元素的大小
+    ngx_uint_t        nalloc; //链表的每个ngx_list_part_t中elts数组的所能容纳的最大元素个数
+    ngx_pool_t       *pool; //当前list数据存放的内存池
+} ngx_list_t;
+
+
+// 具体实现比较简单，就不在累述。
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;内存结构图:b5136761ad8126794030c61cf2f551fa&#34;&gt;内存结构图&lt;/h2&gt;
+
+&lt;p&gt;阅读源码时，请参考下方的内存结构。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_list_t.png&#34;&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_list_t.png&#34; alt=&#34;&#34; /&gt;&lt;/a&gt;
+备注：从参考博客4摘录&lt;/p&gt;
+
+&lt;h2 id=&#34;测试代码:b5136761ad8126794030c61cf2f551fa&#34;&gt;测试代码&lt;/h2&gt;
+
+&lt;p&gt;该测试代码的完整工程的编译和运行方式请参考 &lt;a href=&#34;https://github.com/zieckey/nginx-research&#34;&gt;https://github.com/zieckey/nginx-research项目&lt;/a&gt;。Linux&amp;amp;Windows都测试通过。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;#include &amp;quot;allinc.h&amp;quot;
+
+namespace {
+    struct ListElement {
+        ngx_str_t name;
+        int id;
+    };
+
+    static const char* names[] = { &amp;quot;codeg&amp;quot;, &amp;quot;jane&amp;quot;, &amp;quot;zieckey&amp;quot;, &amp;quot;codeg4&amp;quot;, &amp;quot;codeg5&amp;quot;, &amp;quot;codeg6&amp;quot;, &amp;quot;codeg7&amp;quot;, &amp;quot;codeg8&amp;quot;, &amp;quot;codeg9&amp;quot;, &amp;quot;codeg10&amp;quot; };
+}
+
+TEST_UNIT(ngx_list)
+{
+    ngx_uint_t nalloc = 4;
+    ngx_list_t *list = ngx_list_create(g_pool, nalloc, sizeof(ListElement));
+
+    // insert element to the list
+    for (size_t i = 0; i &amp;lt; H_ARRAYSIZE(names); i++)
+    {
+        ListElement* u = (ListElement*)ngx_list_push(list);
+        u-&amp;gt;id = i;
+        u-&amp;gt;name.data = (u_char*)names[i];
+        u-&amp;gt;name.len = strlen(names[i]);
+    }
+    
+    H_TEST_ASSERT(list-&amp;gt;nalloc == nalloc);
+    H_TEST_ASSERT(list-&amp;gt;last-&amp;gt;next == NULL);
+    H_TEST_ASSERT(list-&amp;gt;last-&amp;gt;nelts == H_ARRAYSIZE(names) % nalloc);
+    H_TEST_ASSERT(list-&amp;gt;last == list-&amp;gt;part.next-&amp;gt;next);
+
+    // traverse the list
+    int count = 0;
+    for (ngx_list_part_t* part = &amp;amp;list-&amp;gt;part; part; part = part-&amp;gt;next)
+    {
+        for (ngx_uint_t n = 0; n &amp;lt; part-&amp;gt;nelts; ++n)
+        {
+            ListElement* u = (ListElement*)(part-&amp;gt;elts) + n;
+            //printf(&amp;quot;id=%d name=%s\n&amp;quot;, u-&amp;gt;id, (char*)u-&amp;gt;name.data);
+            H_TEST_ASSERT(strncmp((char*)u-&amp;gt;name.data, names[count++], u-&amp;gt;name.len) == 0);
+        }
+    }
+    H_TEST_ASSERT(count == H_ARRAYSIZE(names));
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;从下面运行调试截图可以较为清晰的看出&lt;code&gt;ngx_list_t&lt;/code&gt;的三级结构&lt;code&gt;list --&amp;gt; node --&amp;gt; element&lt;/code&gt;。上述例子的list中有10个元素，分为三个节点存储，前两个节点都存满了(4个)，最后一个节点存放了两个元素，但内存都已经分配好了。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_list_win_debug.png&#34;&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_list_win_debug.png&#34; alt=&#34;&#34; /&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;参考:b5136761ad8126794030c61cf2f551fa&#34;&gt;参考：&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://tengine.taobao.org/book/chapter_02.html#ngx-list-t-100&#34;&gt;淘宝：Nginx开发从入门到精通 http://tengine.taobao.org/book/chapter_02.html#ngx-list-t-100&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_list.h&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_list.h&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_list.c&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_list.c&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://my.oschina.net/chenzhuo/blog/175999&#34;&gt;nginx代码分析-基本结构-单链表ngx_list_t http://my.oschina.net/chenzhuo/blog/175999&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Nginx源码研究（6）——双向链表结构ngx_queue_t</title>
+      <link>http://blog.codeg.cn/2015/01/04/ngx_queue_t/</link>
+      <pubDate>Sun, 04 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/04/ngx_queue_t/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:397796b4277a2ac8a3322b37d06e4385&#34;&gt;简介&lt;/h2&gt;
+
+&lt;p&gt;本文主要介绍Nginx双向链表结构&lt;code&gt;ngx_queue_t&lt;/code&gt;这一重要的数据结构的使用方法和具体实现。&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;ngx_queue_t&lt;/code&gt; 是Nginx提供的一个轻量级双向链表容器，它不负责分配内存来存放链表元素。
+其具备下列特点：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;可以高效的执行插入、删除、合并等操作&lt;/li&gt;
+&lt;li&gt;具有排序功能&lt;/li&gt;
+&lt;li&gt;支持两个链表间的合并&lt;/li&gt;
+&lt;li&gt;支持将一个链表一分为二的拆分动作&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;不同于教科书中将链表节点的数据成员声明在链表节点的结构体中，&lt;code&gt;ngx_queue_t&lt;/code&gt;只是声明了前向和后向指针。在使用的时候，我们首先需要定义一个哨兵节点(对于后续具体存放数据的节点，我们称之为数据节点)，比如：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;ngx_queue_t head;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;接下来需要进行初始化，通过宏ngx_queue_init()来实现：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;ngx_queue_init(&amp;amp;head);
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ngx_queue_init()的宏定义如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;#define ngx_queue_init(q)     \
+    (q)-&amp;gt;prev = q;            \
+    (q)-&amp;gt;next = q;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;可见初始的时候哨兵节点的 prev 和 next 都指向自己，因此其实是一个空链表。ngx_queue_empty()可以据此来判断一个链表是否为空。&lt;/p&gt;
+
+&lt;h2 id=&#34;源代码位置:397796b4277a2ac8a3322b37d06e4385&#34;&gt;源代码位置&lt;/h2&gt;
+
+&lt;p&gt;src/core/ngx_queue.{h,c}&lt;/p&gt;
+
+&lt;h2 id=&#34;源码分析:397796b4277a2ac8a3322b37d06e4385&#34;&gt;源码分析&lt;/h2&gt;
+
+&lt;p&gt;除了&lt;code&gt;ngx_queue_data&lt;/code&gt;值得一说外，其他都是双向链表的基本操作，与教科书里的定义完全一致，不在累述。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;//获取队列中节点数据， q是队列中的节点，type队列类型，field是队列类型中ngx_queue_t的元素名
+#define ngx_queue_data(q, type, field)                                         \
+    (type *) ((u_char *) q - offsetof(type, field))
+
+//offsetof也是一个宏定义，如下：
+#define offsetof(p_type,field) ((size_t)&amp;amp;(((p_type *)0)-&amp;gt;field))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;测试代码:397796b4277a2ac8a3322b37d06e4385&#34;&gt;测试代码&lt;/h2&gt;
+
+&lt;p&gt;该测试代码的完整工程的编译和运行方式请参考 &lt;a href=&#34;https://github.com/zieckey/nginx-research&#34;&gt;https://github.com/zieckey/nginx-research项目&lt;/a&gt;。Linux&amp;amp;Windows都测试通过。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;#include &amp;quot;allinc.h&amp;quot;
+
+
+namespace {
+    struct QueueElement {
+        const char* name;
+        int id;
+        ngx_queue_t queue;
+    };
+
+    static int ids[] = { 5, 8, 1, 9, 2, 6, 0, 3, 7, 4 };
+    static const char* names[] = { &amp;quot;codeg&amp;quot;, &amp;quot;jane&amp;quot;, &amp;quot;zieckey&amp;quot;, &amp;quot;codeg4&amp;quot;, &amp;quot;codeg5&amp;quot;, &amp;quot;codeg6&amp;quot;, &amp;quot;codeg7&amp;quot;, &amp;quot;codeg8&amp;quot;, &amp;quot;codeg9&amp;quot;, &amp;quot;codeg10&amp;quot; };
+}
+
+void dump_queue_from_tail(ngx_queue_t *que)
+{
+    ngx_queue_t *q = ngx_queue_last(que);
+
+    printf(&amp;quot;(0x%p: (0x%p, 0x%p)) &amp;lt;==&amp;gt; \n&amp;quot;, que, que-&amp;gt;prev, que-&amp;gt;next);
+
+    for (; q != ngx_queue_sentinel(que); q = ngx_queue_prev(q))
+    {
+        QueueElement *u = ngx_queue_data(q, QueueElement, queue);
+        printf(&amp;quot;(0x%p: (id=%d %s), 0x%p: (0x%p, 0x%p)) &amp;lt;==&amp;gt; \n&amp;quot;, u, u-&amp;gt;id,
+            u-&amp;gt;name, &amp;amp;u-&amp;gt;queue, u-&amp;gt;queue.prev, u-&amp;gt;queue.next);
+    }
+}
+
+void dump_queue_from_head(ngx_queue_t *que)
+{
+    ngx_queue_t *q = ngx_queue_head(que);
+
+    printf(&amp;quot;(0x%x: (0x%x, 0x%x)) &amp;lt;==&amp;gt; \n&amp;quot;, que, que-&amp;gt;prev, que-&amp;gt;next);
+
+    for (; q != ngx_queue_sentinel(que); q = ngx_queue_next(q))
+    {
+        QueueElement *u = ngx_queue_data(q, QueueElement, queue);
+        printf(&amp;quot;(0x%p: (id=%d %s), 0x%p: (0x%p, 0x%p)) &amp;lt;==&amp;gt; \n&amp;quot;, u, u-&amp;gt;id,
+            u-&amp;gt;name, &amp;amp;u-&amp;gt;queue, u-&amp;gt;queue.prev, u-&amp;gt;queue.next);
+    }
+}
+
+//sort from small to big  
+ngx_int_t my_point_cmp(const ngx_queue_t* lhs, const ngx_queue_t* rhs)
+{
+    QueueElement *pt1 = ngx_queue_data(lhs, QueueElement, queue);
+    QueueElement *pt2 = ngx_queue_data(rhs, QueueElement, queue);
+
+    if (pt1-&amp;gt;id &amp;lt; pt2-&amp;gt;id)
+        return 0;
+    return 1;
+}
+
+TEST_UNIT_P(ngx_queue)
+{
+    printf(&amp;quot;--------------------------------\n&amp;quot;);
+    printf(&amp;quot;a new pool created:\n&amp;quot;);
+    printf(&amp;quot;--------------------------------\n&amp;quot;);
+    pool = ngx_create_pool(1024, NULL);
+    dump_pool(pool);
+
+    ngx_queue_t *myque;
+
+    myque = (ngx_queue_t*)ngx_palloc(pool, sizeof(ngx_queue_t));  //alloc a queue head  
+    ngx_queue_init(myque);  //init the queue  
+
+    //insert  some points into the queue  
+    for (int i = 0; i &amp;lt; (int)H_ARRAYSIZE(names); i++)
+    {
+        QueueElement *e = (QueueElement*)ngx_palloc(pool, sizeof(QueueElement));
+        e-&amp;gt;name = names[i];
+        e-&amp;gt;id = ids[i];
+        ngx_queue_init(&amp;amp;e-&amp;gt;queue);
+
+        //insert this point into the points queue  
+        ngx_queue_insert_head(myque, &amp;amp;e-&amp;gt;queue);
+    }
+
+    dump_queue_from_tail(myque);
+    printf(&amp;quot;\n&amp;quot;);
+
+    printf(&amp;quot;--------------------------------\n&amp;quot;);
+    printf(&amp;quot;sort the queue:\n&amp;quot;);
+    printf(&amp;quot;--------------------------------\n&amp;quot;);
+    ngx_queue_sort(myque, my_point_cmp);
+    dump_queue_from_head(myque);
+    printf(&amp;quot;\n&amp;quot;);
+
+    printf(&amp;quot;--------------------------------\n&amp;quot;);
+    printf(&amp;quot;the pool at the end:\n&amp;quot;);
+    printf(&amp;quot;--------------------------------\n&amp;quot;);
+    dump_pool(pool);
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上述例子运行到最后，排序之后的链表正好是升序排列，可以通过下面的调试截图来看到实际内存情况：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_queue_t.png&#34;&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_queue_t.png&#34; alt=&#34;&#34; /&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;其中watch变量表达式为&lt;code&gt;(QueueElement*)((u_char *)myque-&amp;gt;next-&amp;gt;next-&amp;gt;next-&amp;gt;next-&amp;gt;next-&amp;gt;next-&amp;gt;next - (size_t)&amp;amp;(((QueueElement *)0)-&amp;gt;queue))&lt;/code&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;参考:397796b4277a2ac8a3322b37d06e4385&#34;&gt;参考：&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://tengine.taobao.org/book/chapter_02.html#ngx-queue-t-100&#34;&gt;淘宝：Nginx开发从入门到精通 http://tengine.taobao.org/book/chapter_02.html#ngx-queue-t-100&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_queue.h&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_queue.h&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_queue.c&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_queue.c&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://my.oschina.net/chenzhuo/blog/174868&#34;&gt;nginx代码分析-基本结构-queue http://my.oschina.net/chenzhuo/blog/174868&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Nginx源码研究（3）——Nginx数组ngx_array_t和示例</title>
+      <link>http://blog.codeg.cn/2015/01/03/ngx_array_t/</link>
+      <pubDate>Sat, 03 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/03/ngx_array_t/</guid>
+      <description>
+
+&lt;p&gt;本文主要介绍Nginx数组&lt;code&gt;ngx_array_t&lt;/code&gt;这一重要的数据结构的使用方法和具体实现。&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;ngx_array_t&lt;/code&gt;是nginx内部使用的数组结构。nginx的数组结构在存储上与大家认知的C语言内置的数组有相似性，比如实际上存储数据的区域也是一大块连续的内存。但是数组除了存储数据的内存以外还包含一些元信息来描述相关的一些信息。ngx_array_t的定义位于&lt;code&gt;src/core/ngx_array.{c,h}&lt;/code&gt;里面。&lt;/p&gt;
+
+&lt;p&gt;ngx_array.h实现和注释如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;#include &amp;lt;ngx_config.h&amp;gt;
+#include &amp;lt;ngx_core.h&amp;gt;
+
+// 动态数组
+struct ngx_array_s {
+    // elts指向数组的首地址
+    void        *elts; 
+    // nelts是数组中已经使用的元素个数
+    ngx_uint_t   nelts; 
+    // 每个数组元素占用的内存大小
+    size_t       size;  
+    // 当前数组中能够容纳元素个数的总大小
+    ngx_uint_t   nalloc; 
+    // 内存池对象
+    ngx_pool_t  *pool;  
+};
+
+/*
+从内存池中创建n个元素的数组，元素大小为size
+创建一个新的数组对象，并返回这个对象。
+
+p:	数组分配内存使用的内存池；
+n:	数组的初始容量大小，即在不扩容的情况下最多可以容纳的元素个数。
+size:	单个元素的大小，单位是字节。
+
+注意事项: 由于使用ngx_palloc分配内存，数组在扩容时，旧的内存不会被释放，会造成内存的浪费。
+因此，最好能提前规划好数组的容量，在创建或者初始化的时候一次搞定，避免多次扩容，造成内存浪费。
+ */
+ngx_array_t *ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size);
+
+// 销毁该数组对象，并释放其分配的内存回内存池。
+void ngx_array_destroy(ngx_array_t *a);
+
+// 在数组a上新追加一个元素，并返回指向新元素的指针。
+// 需要把返回的指针使用类型转换，转换为具体的类型，然后再给新元素本身或者是各字段（如果数组的元素是复杂类型）赋值。
+// 如果数组已满，则重新分配两倍（nalloc*size)的内存空间，且nalloc更新为2*nalloc
+void *ngx_array_push(ngx_array_t *a);
+
+// 返回将要添加n个元素到数组中其首个元素的地址
+void *ngx_array_push_n(ngx_array_t *a, ngx_uint_t n);
+
+
+// 如果一个数组对象是被分配在堆上的，那么当调用ngx_array_destroy销毁以后，如果想再次使用，就可以调用此函数。
+// 如果一个数组对象是被分配在栈上的，那么就需要调用此函数，进行初始化的工作以后，才可以使用。
+static ngx_inline ngx_int_t
+ngx_array_init(ngx_array_t *array, ngx_pool_t *pool, ngx_uint_t n, size_t size)
+{
+    /*
+     * set &amp;quot;array-&amp;gt;nelts&amp;quot; before &amp;quot;array-&amp;gt;elts&amp;quot;, otherwise MSVC thinks
+     * that &amp;quot;array-&amp;gt;nelts&amp;quot; may be used without having been initialized
+     */
+
+    array-&amp;gt;nelts = 0;
+    array-&amp;gt;size = size;
+    array-&amp;gt;nalloc = n;
+    array-&amp;gt;pool = pool;
+
+    array-&amp;gt;elts = ngx_palloc(pool, n * size);
+    if (array-&amp;gt;elts == NULL) {
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;测试代码，完整的工程编译请参考 &lt;a href=&#34;https://github.com/zieckey/nginx-research&#34;&gt;https://github.com/zieckey/nginx-research项目&lt;/a&gt;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-cPP&#34;&gt;#include &amp;quot;allinc.h&amp;quot;
+
+struct User {
+    ngx_str_t name;
+    ngx_str_t url;
+    int id;
+};
+
+/*
+* 
+*/
+TEST_UNIT(ngx_array_t) {
+    ngx_array_t* a = ngx_array_create(g_pool, 10, sizeof(User));
+
+    H_TEST_ASSERT(a-&amp;gt;nalloc == 10);
+    H_TEST_ASSERT(a-&amp;gt;size == sizeof(User));
+
+    // Add one element to the array
+    User* u = (User*)ngx_array_push(a);
+    u-&amp;gt;name.data = (u_char*)ngx_pcalloc(g_pool, 32);
+    strcpy((char*)u-&amp;gt;name.data, &amp;quot;CodeG&amp;quot;);
+    u-&amp;gt;name.len = strlen(&amp;quot;CodeG&amp;quot;);
+    ngx_str_set(&amp;amp;u-&amp;gt;url, &amp;quot;http://blog.codeg.cn/2015/01/03/ngx_array_t&amp;quot;);
+    u-&amp;gt;id = 0;
+    H_TEST_ASSERT(a-&amp;gt;nelts == 1);
+    H_TEST_ASSERT(a-&amp;gt;elts == u); // elts指向数组的首地址，因此与第一个数组元素地址相同
+
+    // Add another one element to the array
+    u = (User*)ngx_array_push(a);
+    u-&amp;gt;name.data = (u_char*)ngx_pcalloc(g_pool, 32);
+    strcpy((char*)u-&amp;gt;name.data, &amp;quot;zieckey&amp;quot;);
+    u-&amp;gt;name.len = strlen(&amp;quot;zieckey&amp;quot;);
+    ngx_str_set(&amp;amp;u-&amp;gt;url, &amp;quot;http://blog.codeg.cn/2014/12/13/Hello-CodeG&amp;quot;);
+    u-&amp;gt;id = 1;
+    H_TEST_ASSERT(a-&amp;gt;nelts == 2);
+
+    // Add 3rd element to the array
+    u = (User*)ngx_array_push(a);
+    u-&amp;gt;name.data = (u_char*)ngx_pcalloc(g_pool, 32);
+    strcpy((char*)u-&amp;gt;name.data, &amp;quot;zieckey&amp;quot;);
+    u-&amp;gt;name.len = strlen(&amp;quot;zieckey&amp;quot;);
+    ngx_str_set(&amp;amp;u-&amp;gt;url, &amp;quot;https://github.com/zieckey&amp;quot;);
+    u-&amp;gt;id = 2;
+    H_TEST_ASSERT(a-&amp;gt;nelts == 3);
+
+    // Traversal the array
+    for (ngx_uint_t i = 0; i &amp;lt; a-&amp;gt;nelts; ++i) {
+        u = (User*)((char*)a-&amp;gt;elts + sizeof(User)*i);
+        H_TEST_ASSERT(u-&amp;gt;id == i);
+        printf(&amp;quot;id=%d name=[%s] url=[%s]\n&amp;quot;, u-&amp;gt;id, (char*)u-&amp;gt;name.data, (char*)u-&amp;gt;url.data);
+    }
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上述代码输出如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;id=0 name=[CodeG] url=[http://blog.codeg.cn/2015/01/03/ngx_array_t]
+id=1 name=[zieckey] url=[http://blog.codeg.cn/2014/12/13/Hello-CodeG]
+id=2 name=[zieckey] url=[https://github.com/zieckey]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;参考:d14ae2a12d411a07b0fd4916ece1b811&#34;&gt;参考：&lt;/h3&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://tengine.taobao.org/book/chapter_02.html#ngx-array-t-100&#34;&gt;淘宝：Nginx开发从入门到精通 http://tengine.taobao.org/book/chapter_02.html#ngx-array-t-100&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.h&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.h&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.c&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_array.c&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Nginx源码研究（4）——hash结构ngx_hash_t</title>
+      <link>http://blog.codeg.cn/2015/01/03/ngx_hash_t/</link>
+      <pubDate>Sat, 03 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/03/ngx_hash_t/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:31936ad00b1d63154f84a804c2cf2573&#34;&gt;简介&lt;/h2&gt;
+
+&lt;p&gt;本文主要介绍Nginx的hash结构&lt;code&gt;ngx_hash_t&lt;/code&gt;这一重要的数据结构的使用方法和具体实现。nginx实现的hash表特点是构建一次, 初始化后无法动态的增删，之后就只用于&lt;k,v&gt;查找。之所以这么设计是为了使用最少的内存同时得到最快的查找速度。&lt;/p&gt;
+
+&lt;h2 id=&#34;冲突解决:31936ad00b1d63154f84a804c2cf2573&#34;&gt;冲突解决&lt;/h2&gt;
+
+&lt;p&gt;Nginx的&lt;code&gt;ngx_hash_t&lt;/code&gt;采用开放地址法来解决冲突问题，即：插入的时候发现自己的位置f(key)已经被占了，就向后遍历，查看f(key)+1的位置是否被占用，如果没被占用，就占用它，否则继续相后，查询的时候，同样也如果f(key)不是需要的值，也依次向后遍历，一直找到需要的元素。&lt;/p&gt;
+
+&lt;h2 id=&#34;源代码位置:31936ad00b1d63154f84a804c2cf2573&#34;&gt;源代码位置&lt;/h2&gt;
+
+&lt;p&gt;src/core/ngx_hash.{h,c}&lt;/p&gt;
+
+&lt;h2 id=&#34;数据结构:31936ad00b1d63154f84a804c2cf2573&#34;&gt;数据结构&lt;/h2&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;//hash结构
+typedef struct {
+    ngx_hash_elt_t  **buckets; //hash桶(有size个桶)
+    ngx_uint_t        size;    //hash桶个数
+} ngx_hash_t;
+
+
+// &amp;lt;key,value&amp;gt; 结构，初始化时候使用
+typedef struct {
+    ngx_str_t         key;      //key，为nginx的字符串结构
+    ngx_uint_t        key_hash; //由该key计算出的hash值(通过hash函数如ngx_hash_key_lc())
+    void             *value;    //该key对应的值，组成一个键-值对&amp;lt;key,value&amp;gt;
+} ngx_hash_key_t;
+
+//hash元素结构
+typedef struct {
+    void             *value;    //value，即某个key对应的值，即&amp;lt;key,value&amp;gt;中的value
+    u_short           len;      //name长度
+    u_char            name[1];  //某个要hash的数据(在nginx中表现为字符串)，即&amp;lt;key,value&amp;gt;中的key
+    // 这里数组长度为1，是一个小技巧。实现时，在具体分配ngx_hash_elt_t的大小时使用宏NGX_HASH_ELT_SIZE来确定(并且是内存对齐的)：
+    // #define NGX_HASH_ELT_SIZE(name) (sizeof(void *) + ngx_align((name)-&amp;gt;key.len + 2, sizeof(void *)))
+} ngx_hash_elt_t;
+
+//hash初始化结构，用来将其相关数据封装起来作为参数传递给ngx_hash_init()或ngx_hash_wildcard_init()函数
+typedef struct {
+    ngx_hash_t       *hash;         //指向待初始化的hash结构。
+    ngx_hash_key_pt   key;          //hash函数指针
+
+    // 散列表中槽的最大数目
+    ngx_uint_t        max_size;     //bucket的最大个数
+
+    // 散列表中一个槽的空间大小，它限制了每个散列表元素关键字的最大长度，通过NGX_HASH_ELT_SIZE(name)计算每个element的大小。
+    // 如果这个bucket_size设置较大，那么他就能够容纳多个element，这样一个bucket里存放多个element，进而导致查找速度下降。
+    // 为了更好的查找速度，请将bucket_size设置为所有element长度最大的那个。
+    ngx_uint_t        bucket_size;
+
+    // 散列表的名称
+    char             *name;         //该hash结构的名字(仅在错误日志中使用)
+    // 内存池，它分配散列表（最多3个，包括1个普通散列表，1个前置通配符散列表，1个后置通配符散列表）中的所有槽
+    ngx_pool_t       *pool;         //该hash结构从pool指向的内存池中分配
+    // 临时内存池，它仅存在于初始化散列表之前。它主要用于分配一些临时的动态数组，带通配符的元素在初始化时需要用到这些数组。
+    ngx_pool_t       *temp_pool;    //分配临时数据空间的内存池
+} ngx_hash_init_t;
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;内存结构图:31936ad00b1d63154f84a804c2cf2573&#34;&gt;内存结构图&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-2.png&#34;&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-2.png&#34; alt=&#34;&#34; /&gt;&lt;/a&gt;
+备注：从参考文档7摘录&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-1.png&#34;&gt;&lt;img src=&#34;http://blog.codeg.cn/images/githubpages/nginx/ngx_hash_t-1.png&#34; alt=&#34;&#34; /&gt;&lt;/a&gt;
+备注：从参考博客6摘录&lt;/p&gt;
+
+&lt;h2 id=&#34;初始化函数:31936ad00b1d63154f84a804c2cf2573&#34;&gt;初始化函数&lt;/h2&gt;
+
+&lt;p&gt;直接上增加了注释的代码，这个需要结合上面两个图片来看。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;
+// 第一个参数hinit是初始化的一些参数的一个集合。 names是初始化一个ngx_hash_t所需要的所有&amp;lt;key,value&amp;gt;对的一个数组，而nelts是该数组的个数。
+// 备注：我倒是觉得可以直接使用一个ngx_array_t*作为参数呢？
+//
+//初始化步骤
+//1. 遍历待初始化的ngx_hash_key_t数组, 保证占用空间最大的ngx_hash_elt_t元素可以装进bucket_size大小空间
+//2. 预估一个可以装入所有元素的hash表长度start, 判断是否可以将所有元素装进这个size大小的hash表
+//3. 装不下, 增加size, 如果size达到max_size仍然不能创建这个hash表, 则失败. 否则确定了要构建的hash表长度(buckets个数)
+//4. found:处开始,, 计算所有元素占用总空间, 为hash表的各个bucket分配各自的空间
+//5. 将ngx_hash_key_t数组元素分别放入对应的bucket中
+//
+//其中第2步中怎么计算初始的可能hash表的大小start?
+//start = nelts / (bucket_size / (2 * sizeof(void *)));
+//也即认为一个bucket最多放入的元素个数为bucket_size / (2 * sizeof(void *));
+//64位机器上, sizeof(void *) 为8 Bytes,  sizeof(unsigned short)为2Bytes, sizeof(name)为1 Byte, sizeof(ngx_hash_elt_t)为16Bytes, 正好与2 * sizeof(void *)相等.
+ngx_int_t
+ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
+{
+    u_char          *elts;
+    size_t           len;
+    u_short         *test;
+    ngx_uint_t       i, n, key, size, start, bucket_size;
+    ngx_hash_elt_t  *elt, **buckets;
+
+    //检查names数组的每一个元素，判断桶的大小是否够存放key
+    for (n = 0; n &amp;lt; nelts; n++) {
+        if (hinit-&amp;gt;bucket_size &amp;lt; NGX_HASH_ELT_SIZE(&amp;amp;names[n]) + sizeof(void *))
+        {
+        	//有任何一个元素，桶的大小不够为该元素分配空间，则退出
+            ngx_log_error(NGX_LOG_EMERG, hinit-&amp;gt;pool-&amp;gt;log, 0,
+                          &amp;quot;could not build the %s, you should &amp;quot;
+                          &amp;quot;increase %s_bucket_size: %i&amp;quot;,
+                          hinit-&amp;gt;name, hinit-&amp;gt;name, hinit-&amp;gt;bucket_size);
+            return NGX_ERROR;
+        }
+    }
+
+    //分配 sizeof(u_short)*max_size 个字节的空间保存hash数据
+    //(该内存分配操作不在nginx的内存池中进行，因为test只是临时的)
+    test = ngx_alloc(hinit-&amp;gt;max_size * sizeof(u_short), hinit-&amp;gt;pool-&amp;gt;log);
+    if (test == NULL) {
+        return NGX_ERROR;
+    }
+
+    bucket_size = hinit-&amp;gt;bucket_size - sizeof(void *);
+
+    start = nelts / (bucket_size / (2 * sizeof(void *)));
+    start = start ? start : 1;
+
+    if (hinit-&amp;gt;max_size &amp;gt; 10000 &amp;amp;&amp;amp; nelts &amp;amp;&amp;amp; hinit-&amp;gt;max_size / nelts &amp;lt; 100) {
+        start = hinit-&amp;gt;max_size - 1000;
+    }
+
+    for (size = start; size &amp;lt; hinit-&amp;gt;max_size; size++) {
+
+        ngx_memzero(test, size * sizeof(u_short));
+        //标记1：此块代码是检查bucket大小是否够分配hash数据
+        for (n = 0; n &amp;lt; nelts; n++) {
+            if (names[n].key.data == NULL) {
+                continue;
+            }
+
+            //计算key和names中所有name长度，并保存在test[key]中
+            key = names[n].key_hash % size; //若size=1，则key一直为0
+            test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&amp;amp;names[n]));
+
+#if 0
+            ngx_log_error(NGX_LOG_ALERT, hinit-&amp;gt;pool-&amp;gt;log, 0,
+                          &amp;quot;%ui: %ui %ui \&amp;quot;%V\&amp;quot;&amp;quot;,
+                          size, key, test[key], &amp;amp;names[n].key);
+#endif
+
+            //若超过了桶的大小，则到下一个桶重新计算
+            if (test[key] &amp;gt; (u_short) bucket_size) {
+                goto next;
+            }
+        }
+
+        goto found;
+
+    next:
+
+        continue;
+    }
+
+    //若没有找到合适的bucket，退出
+    ngx_log_error(NGX_LOG_EMERG, hinit-&amp;gt;pool-&amp;gt;log, 0,
+                  &amp;quot;could not build the %s, you should increase &amp;quot;
+                  &amp;quot;either %s_max_size: %i or %s_bucket_size: %i&amp;quot;,
+                  hinit-&amp;gt;name, hinit-&amp;gt;name, hinit-&amp;gt;max_size,
+                  hinit-&amp;gt;name, hinit-&amp;gt;bucket_size);
+
+    ngx_free(test);
+
+    return NGX_ERROR;
+
+found: //找到合适的bucket
+
+	//将test数组前size个元素初始化为sizeof(void *)
+    for (i = 0; i &amp;lt; size; i++) {
+        test[i] = sizeof(void *);
+    }
+
+    /** 标记2：与标记1代码基本相同，但此块代码是再次计算所有hash数据的总长度(标记1的检查已通过)
+        但此处的test[i]已被初始化为sizeof(void *)，即相当于后续的计算再加上一个void指针的大小。
+     */
+    for (n = 0; n &amp;lt; nelts; n++) {
+        if (names[n].key.data == NULL) {
+            continue;
+        }
+
+        //计算key和names中所有name长度，并保存在test[key]中
+        key = names[n].key_hash % size;//若size=1，则key一直为0
+        test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&amp;amp;names[n]));
+    }
+
+    //计算hash数据的总长度
+    len = 0;
+
+    for (i = 0; i &amp;lt; size; i++) {
+        if (test[i] == sizeof(void *)) {
+        	//若test[i]仍为初始化的值为sizeof(void *)，即没有变化，则继续
+            continue;
+        }
+
+        //对test[i]按ngx_cacheline_size对齐(32位平台，ngx_cacheline_size=32)
+        test[i] = (u_short) (ngx_align(test[i], ngx_cacheline_size));
+
+        len += test[i];
+    }
+
+    if (hinit-&amp;gt;hash == NULL) {
+    	//在内存池中分配hash头及buckets数组(size个ngx_hash_elt_t*结构)
+        hinit-&amp;gt;hash = ngx_pcalloc(hinit-&amp;gt;pool, sizeof(ngx_hash_wildcard_t)
+                                             + size * sizeof(ngx_hash_elt_t *));
+        if (hinit-&amp;gt;hash == NULL) {
+            ngx_free(test);
+            return NGX_ERROR;
+        }
+
+        //计算buckets的启示位置(在ngx_hash_wildcard_t结构之后)
+        buckets = (ngx_hash_elt_t **)
+                      ((u_char *) hinit-&amp;gt;hash + sizeof(ngx_hash_wildcard_t));
+
+    } else {
+    	//在内存池中分配buckets数组(size个ngx_hash_elt_t*结构)
+        buckets = ngx_pcalloc(hinit-&amp;gt;pool, size * sizeof(ngx_hash_elt_t *));
+        if (buckets == NULL) {
+            ngx_free(test);
+            return NGX_ERROR;
+        }
+    }
+
+    //接着分配elts，大小为len+ngx_cacheline_size，此处为什么+ngx_cacheline_size？——下面要按ngx_cacheline_size字节对齐
+    elts = ngx_palloc(hinit-&amp;gt;pool, len + ngx_cacheline_size);
+    if (elts == NULL) {
+        ngx_free(test);
+        return NGX_ERROR;
+    }
+
+    // 对齐
+    elts = ngx_align_ptr(elts, ngx_cacheline_size);
+
+    //将buckets数组与相应elts对应起来
+    for (i = 0; i &amp;lt; size; i++) {
+        if (test[i] == sizeof(void *)) {
+            continue;
+        }
+
+        buckets[i] = (ngx_hash_elt_t *) elts;
+        elts += test[i];
+    }
+
+    for (i = 0; i &amp;lt; size; i++) {
+        test[i] = 0;
+    }
+
+    //将传进来的每一个hash数据存入hash表
+    for (n = 0; n &amp;lt; nelts; n++) {
+        if (names[n].key.data == NULL) {
+            continue;
+        }
+
+        //计算key，即将被hash的数据在第几个bucket，并计算其对应的elts位置
+        key = names[n].key_hash % size;
+        elt = (ngx_hash_elt_t *) ((u_char *) buckets[key] + test[key]);
+
+        //对ngx_hash_elt_t结构赋值
+        elt-&amp;gt;value = names[n].value;
+        elt-&amp;gt;len = (u_short) names[n].key.len;
+
+        ngx_strlow(elt-&amp;gt;name, names[n].key.data, names[n].key.len);
+
+        //计算下一个要被hash的数据的长度偏移
+        test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&amp;amp;names[n]));
+    }
+
+    for (i = 0; i &amp;lt; size; i++) {
+        if (buckets[i] == NULL) {
+            continue;
+        }
+
+        //test[i]相当于所有被hash的数据总长度
+        elt = (ngx_hash_elt_t *) ((u_char *) buckets[i] + test[i]);
+
+        //将每个bucket的最后一个指针大小区域置NULL
+        elt-&amp;gt;value = NULL;
+    }
+
+    ngx_free(test);//释放该临时空间
+
+    hinit-&amp;gt;hash-&amp;gt;buckets = buckets;
+    hinit-&amp;gt;hash-&amp;gt;size = size;
+
+    return NGX_OK;
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;测试代码:31936ad00b1d63154f84a804c2cf2573&#34;&gt;测试代码&lt;/h2&gt;
+
+&lt;p&gt;该测试代码的完整工程的编译和运行方式请参考 &lt;a href=&#34;https://github.com/zieckey/nginx-research&#34;&gt;https://github.com/zieckey/nginx-research项目&lt;/a&gt;。Linux&amp;amp;Windows都测试通过。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;static ngx_str_t names[] = {
+    ngx_string(&amp;quot;zieckey&amp;quot;),
+    ngx_string(&amp;quot;codeg&amp;quot;),
+    ngx_string(&amp;quot;jane&amp;quot;) };
+
+static char* descs[] = { &amp;quot;zieckey&#39;s id is 0&amp;quot;, &amp;quot;codeg&#39;s id is 1&amp;quot;, &amp;quot;jane&#39;s id is 2&amp;quot; };
+
+// hash table的一些基本操作
+TEST_UNIT(ngx_hash)
+{
+    ngx_uint_t          k;
+    ngx_pool_t*         pool = g_pool;
+    ngx_hash_init_t     hash_init;
+    ngx_array_t*        elements;
+    ngx_hash_key_t*     arr_node;
+    char*               find;
+    int                 i;
+
+    ngx_cacheline_size = NGX_CPU_CACHE_LINE;
+
+    hash_init.hash = NULL;                      // 置为NULL，让ngx_hash_init来初始化
+    hash_init.key = &amp;amp;ngx_hash_key_lc;          // hash算法函数
+    hash_init.max_size = 1024;                   // max_size
+    hash_init.bucket_size = 64; // ngx_align(64, ngx_cacheline_size);
+    hash_init.name = &amp;quot;codeg_hash&amp;quot;;          // 在log里会用到
+    hash_init.pool = pool;                 // 内存池
+    hash_init.temp_pool = NULL;
+
+    // 创建数组
+    elements = ngx_array_create(pool, H_ARRAYSIZE(names), sizeof(ngx_hash_key_t));
+    for (i = 0; i &amp;lt; H_ARRAYSIZE(names); i++) {
+        arr_node = (ngx_hash_key_t*)ngx_array_push(elements);
+        arr_node-&amp;gt;key = (names[i]);
+        arr_node-&amp;gt;key_hash = ngx_hash_key_lc(arr_node-&amp;gt;key.data, arr_node-&amp;gt;key.len);
+        arr_node-&amp;gt;value = (void*)descs[i];
+        printf(&amp;quot;key: %s , key_hash: %u\n&amp;quot;, arr_node-&amp;gt;key.data, arr_node-&amp;gt;key_hash);
+    }
+
+    H_TEST_ASSERT(ngx_hash_init(&amp;amp;hash_init, (ngx_hash_key_t*)elements-&amp;gt;elts, elements-&amp;gt;nelts) == NGX_OK);
+
+    // 查找
+    k = ngx_hash_key_lc(names[0].data, names[0].len);
+    printf(&amp;quot;%s key is %u\n&amp;quot;, names[0].data, k);
+    find = (char*)ngx_hash_find(hash_init.hash, k, (u_char*)names[0].data, names[0].len);
+    H_TEST_ASSERT(find);
+    if (find) {
+        printf(&amp;quot;get desc of %s : %s\n&amp;quot;, (char*)names[0].data, (char*)find);
+    }
+
+    ngx_array_destroy(elements);
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;参考:31936ad00b1d63154f84a804c2cf2573&#34;&gt;参考：&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://tengine.taobao.org/book/chapter_02.html#ngx-hash-t-100&#34;&gt;淘宝：Nginx开发从入门到精通 http://tengine.taobao.org/book/chapter_02.html#ngx-hash-t-100&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.h&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.h&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.c&#34;&gt;nginx源码注释 https://github.com/zieckey/nginx-1.0.14_comment/blob/master/src/core/ngx_hash.c&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://blog.csdn.net/livelylittlefish/article/details/6636229&#34;&gt;nginx源码分析—hash结构ngx_hash_t(v1.0.4) http://blog.csdn.net/livelylittlefish/article/details/6636229&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://blog.csdn.net/chen19870707/article/details/40794285&#34;&gt;菜鸟nginx源码剖析数据结构篇（六） 哈希表 ngx_hash_t（上） http://blog.csdn.net/chen19870707/article/details/40794285&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://my.oschina.net/chenzhuo/blog/177866&#34;&gt;nginx代码分析-基本结构-哈希表ngx_hash_t http://my.oschina.net/chenzhuo/blog/177866&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://code.google.com/p/nginxsrp/wiki/NginxCodeReview&#34;&gt;nginx源码研究 https://code.google.com/p/nginxsrp/wiki/NginxCodeReview&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Nginx源码研究（1）——项目介绍</title>
+      <link>http://blog.codeg.cn/2015/01/02/nginx-research-readme/</link>
+      <pubDate>Fri, 02 Jan 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/01/02/nginx-research-readme/</guid>
+      <description>
+
+&lt;h1 id=&#34;nginx-research:a8a2b606967fe28d66065d4b30f17783&#34;&gt;nginx-research&lt;/h1&gt;
+
+&lt;p&gt;本项目是为了研究Nginx源码而建立的。该项目有以下几点比较不错的优点：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;VS2013源码编译和调试&lt;/li&gt;
+&lt;li&gt;将Nginx看做一个优秀的C库使用，已经将其编译为库了，并且有很多例子参考&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;项目地址：&lt;a href=&#34;https://github.com/zieckey/nginx-research&#34;&gt;https://github.com/zieckey/nginx-research&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;中文介绍页面：&lt;a href=&#34;http://blog.codeg.cn/2015/01/02/nginx-research-readme&#34;&gt;http://blog.codeg.cn/2015/01/02/nginx-research-readme&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;1-windows使用:a8a2b606967fe28d66065d4b30f17783&#34;&gt;1. Windows使用&lt;/h2&gt;
+
+&lt;p&gt;打开&lt;code&gt;nginx-win32-src\nginx.sln&lt;/code&gt;文件，可以看到两个工程：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;nginx ： Nginx的Windows版本，可以直接编译运行。&lt;/li&gt;
+&lt;li&gt;nginxresearch : 将Nginx做为lib库使用的工程&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h5 id=&#34;nginx二进制:a8a2b606967fe28d66065d4b30f17783&#34;&gt;Nginx二进制&lt;/h5&gt;
+
+&lt;p&gt;直接编译运行nginx工程即可。目前包含下列几个示例Nginx扩展模块：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;ngx_http hello world module&lt;/li&gt;
+&lt;li&gt;ngx_http merge module&lt;/li&gt;
+&lt;li&gt;ngx_http memcached module&lt;/li&gt;
+&lt;li&gt;ngx_http upstream sample code&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;windows下运行起来后，监听80端口，在浏览器打开&lt;a href=&#34;http://localhost/helloworld.html&#34;&gt;http://localhost/helloworld.html&lt;/a&gt; 会返回当前的时间和程序启动的时间，如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;startup: 2015-01-01 19:26:16
+current: 2015-01-01 19:26:57
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h5 id=&#34;将nginx做为c库使用:a8a2b606967fe28d66065d4b30f17783&#34;&gt;将Nginx做为C库使用&lt;/h5&gt;
+
+&lt;p&gt;直接编译运行nginxresearch工程即可。自带gtest，方便写样例代码。目前包含下列几个示例程序：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;ngx_encode_base64的使用&lt;/li&gt;
+&lt;li&gt;ngx_str_t&lt;/li&gt;
+&lt;li&gt;ngx_pool_t&lt;/li&gt;
+&lt;li&gt;ngx_hash_t&lt;/li&gt;
+&lt;li&gt;ngx_list_t&lt;/li&gt;
+&lt;li&gt;ngx_array_t&lt;/li&gt;
+&lt;li&gt;ngx_queue_t&lt;/li&gt;
+&lt;li&gt;ngx_pool_t&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;另外，还从&lt;code&gt;ngx_pool_t&lt;/code&gt;抽取了一个完全独立的&lt;code&gt;cg_pool_t&lt;/code&gt;结构，不依赖Nginx，也不依赖任何第三方类库，可以直接将源码拿走集成进现有系统中。典型的应用场景是这样的，假如你有一个nginx扩展，用到了ngx_pool_t这个数据结构，但是现在有一个需求是需要将这份扩展代码独立出来，不依赖nginx运行，那么这个&lt;code&gt;cg_pool_t&lt;/code&gt;是你的好帮手，你几乎只需要将头文件从&lt;code&gt;ngx_palloc.h&lt;/code&gt;换为&lt;code&gt;cg_pool.h&lt;/code&gt;即可，代码完全不用修改即可完成移植。&lt;/p&gt;
+
+&lt;h2 id=&#34;2-linux-使用:a8a2b606967fe28d66065d4b30f17783&#34;&gt;2. Linux 使用&lt;/h2&gt;
+
+&lt;h5 id=&#34;nginx二进制-1:a8a2b606967fe28d66065d4b30f17783&#34;&gt;Nginx二进制&lt;/h5&gt;
+
+&lt;p&gt;进入各个模块的子目录，直接make即可&lt;/p&gt;
+
+&lt;h5 id=&#34;将nginx做为c库使用-1:a8a2b606967fe28d66065d4b30f17783&#34;&gt;将Nginx做为C库使用&lt;/h5&gt;
+
+&lt;p&gt;进入&lt;code&gt;libnginx&lt;/code&gt;目录，直接make即可&lt;/p&gt;
+
+&lt;h2 id=&#34;3-比较不错的资源:a8a2b606967fe28d66065d4b30f17783&#34;&gt;3. 比较不错的资源&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://tengine.taobao.org/book/&#34;&gt;淘宝：Nginx开发从入门到精通&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Nginx源码研究（2）——编译Nginx为静(动)态库以及验证</title>
+      <link>http://blog.codeg.cn/2014/12/31/compile-nginx-to-static-lib-and-1st-usage/</link>
+      <pubDate>Wed, 31 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2014/12/31/compile-nginx-to-static-lib-and-1st-usage/</guid>
+      <description>
+
+&lt;p&gt;最近编码哥又开始阅读和研究Nginx源码，这一过程中做了一些笔记，从而形成本系列文章。&lt;/p&gt;
+
+&lt;p&gt;本文主要介绍如何将nginx编译为一个动态库或静态库，这样我们可以更方便调用nginx提供的一系列高性能的C函数库，包括:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;ngx_string_t&lt;/li&gt;
+&lt;li&gt;ngx_array_t&lt;/li&gt;
+&lt;li&gt;ngx_list_t&lt;/li&gt;
+&lt;li&gt;ngx_buf_t&lt;/li&gt;
+&lt;li&gt;ngx_pool_t&lt;/li&gt;
+&lt;li&gt;ngx_hash_t&lt;/li&gt;
+&lt;li&gt;ngx_queue_t&lt;/li&gt;
+&lt;li&gt;ngx_rbtree_t&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&#34;思路:dafbac7da3c3a469035fa234c6241392&#34;&gt;思路&lt;/h3&gt;
+
+&lt;p&gt;Nginx项目本来是作为一个整体直接编译出一个二进制文件，要将其编译为库，有两个地方要修改：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;增加编译选项&lt;code&gt;-fPIC&lt;/code&gt;使得库编译出来是地址无关的，这样方便被其他程序连接&lt;/li&gt;
+&lt;li&gt;将程序入口main函数修改了，例如修改为__xmain&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;上述两步做完，就可以轻松将nginx编译为一个动态库或静态库。&lt;/p&gt;
+
+&lt;h3 id=&#34;编译脚本:dafbac7da3c3a469035fa234c6241392&#34;&gt;编译脚本&lt;/h3&gt;
+
+&lt;p&gt;关键内容如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;wget http://nginx.org/download/nginx-$(NGINX_VERSION).tar.gz
+tar zxvf $(NGINX_ROOT).tar.gz 
+sed -i &amp;quot;s|-Werror|-Werror -fPIC|g&amp;quot; $(NGINX_ROOT)/auto/cc/gcc
+sed -i &amp;quot;s|main(int argc|__xmain(int argc|g&amp;quot; $(NGINX_ROOT)/src/core/nginx.c
+cd $(NGINX_ROOT); ./configure ; (make||echo)
+
+# 编译静态库
+$(LIBNGINX) : $(NGINX_MAKEFILE)
+    $(AR) $(ARFLAGS) $@ $(NGINX_OBJS) 
+    ranlib $@
+
+# 编译动态库
+libnginx.so :
+    cc -static -o $@ $(LDFLAGS) $(NGINX_OBJS)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;详情请见&lt;a href=&#34;https://github.com/zieckey/nginx-research/blob/master/libnginx/Makefile&#34;&gt;Makefile&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;将该&lt;a href=&#34;https://github.com/zieckey/nginx-research/blob/master/libnginx/Makefile&#34;&gt;Makefile&lt;/a&gt;和&lt;a href=&#34;https://github.com/zieckey/nginx-research/blob/master/libnginx/build.mk&#34;&gt;build.mk&lt;/a&gt;两个文件保存到一个目录下，然后在该目录下执行&lt;code&gt;make&lt;/code&gt;命令即可将最新的&lt;a href=&#34;http://nginx.org/download/nginx-1.7.9.tar.gz&#34;&gt;nginx-1.7.9.tar.gz&lt;/a&gt;（2014-12-23发布）下载下来，然后解压、编译为一个libnginx.a的静态库。&lt;/p&gt;
+
+&lt;h3 id=&#34;写测试程序:dafbac7da3c3a469035fa234c6241392&#34;&gt;写测试程序&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-c&#34;&gt;	#include &amp;lt;stdio.h&amp;gt;
+	#include &amp;quot;ngx_config.h&amp;quot;
+	#include &amp;quot;ngx_conf_file.h&amp;quot;
+	#include &amp;quot;nginx.h&amp;quot;
+	#include &amp;quot;ngx_core.h&amp;quot;
+	#include &amp;quot;ngx_string.h&amp;quot;
+	#include &amp;quot;ngx_string.h&amp;quot;
+	
+	int main() {
+	    ngx_str_t enc;
+	    ngx_str_t dec;
+	    ngx_str_t mystr = ngx_string(&amp;quot;https://github.com/zieckey/gochart&amp;quot;);
+	    int enc_len = ngx_base64_encoded_length(mystr.len);
+	    enc.data = malloc(enc_len + 1);
+	    dec.data = malloc(mystr.len);
+	    ngx_encode_base64(&amp;amp;enc, &amp;amp;mystr);
+	    printf(&amp;quot;source string is [%s] , base64 encoded string is [%s]\n&amp;quot;, mystr.data, enc.data);
+	    ngx_decode_base64(&amp;amp;dec, &amp;amp;enc);
+	    printf(&amp;quot;base64 encoded string is [%s] , base64 decoded string is [%s]\n&amp;quot;, enc.data, dec.data);
+	    if (ngx_strncmp(mystr.data, dec.data, dec.len) == 0) {
+	        printf(&amp;quot;base64 encode/decode OK\n&amp;quot;);
+	    } else {
+	        printf(&amp;quot;base64 encode/decode FAILED\n&amp;quot;);
+	    }
+	    free(enc.data);
+	    free(dec.data);
+	    return 0;
+	}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;编译连接：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;gcc -c -pipe -O -fPIC \
+    -W -Wall -Wpointer-arith \
+    -Wunused-value -Wno-unused-parameter \
+    -Wunused-function -Wunused-variable \
+    -I ../nginx-1.7.9/objs \
+    -I ../nginx-1.7.9/src/core \
+    -I ../nginx-1.7.9/src/os \
+    -I ../nginx-1.7.9/src/os/unix \
+    -I ../nginx-1.7.9/src/os/event  base64.c -o base64.o
+gcc -o base64 base64.o ../libnginx.a \
+    -L .. -lnginx -lpcre -lcrypto -lcrypt -lz -lpthread
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;运行：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ ./base64 
+source string is [https://github.com/zieckey/gochart] , base64 encoded string is [aHR0cHM6Ly9naXRodWIuY29tL3ppZWNrZXkvZ29jaGFydA==]
+base64 encoded string is [aHR0cHM6Ly9naXRodWIuY29tL3ppZWNrZXkvZ29jaGFydA==] , base64 decoded string is [https://github.com/zieckey/gochart]
+base64 encode/decode OK
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;源代码地址：&lt;a href=&#34;https://github.com/zieckey/nginx-research/tree/master/nginxlib&#34;&gt;https://github.com/zieckey/nginx-research/tree/master/nginxlib&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;参考：&lt;a href=&#34;https://code.google.com/p/nginxsrp/wiki/NginxCodeReview&#34;&gt;https://code.google.com/p/nginxsrp/wiki/NginxCodeReview&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Golang写的HTTP服务与Nginx对比</title>
+      <link>http://blog.codeg.cn/2014/12/13/golang-vs-nginx-at-httpecho/</link>
+      <pubDate>Sat, 13 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2014/12/13/golang-vs-nginx-at-httpecho/</guid>
+      <description>&lt;p&gt;Golang写网络程序的确很简单，一个HTTP Echo服务，几行源码就可以搞定。&lt;a href=&#34;https://github.com/zieckey/golangbenchmark/blob/master/httpecho/main.go&#34;&gt;Golang源码&lt;/a&gt;如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;log&amp;quot;
+	&amp;quot;net/http&amp;quot;
+	&amp;quot;io/ioutil&amp;quot;
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	buf, err := ioutil.ReadAll(r.Body) //Read the http body
+	if err == nil {
+		w.Write(buf)
+		return
+	}
+
+	w.WriteHeader(403)
+}
+
+func main() {
+	http.HandleFunc(&amp;quot;/echo&amp;quot;, handler)
+	log.Fatal(http.ListenAndServe(&amp;quot;:8091&amp;quot;, nil))
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Nginx直接使用&lt;a href=&#34;https://github.com/openresty/echo-nginx-module&#34;&gt;echo module&lt;/a&gt;,配置文件如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;worker_processes  24;
+#daemon off;
+
+events {
+    worker_connections  4096;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    sendfile        on;
+    keepalive_timeout  65;
+
+    server {
+        listen       8090;
+        server_name  localhost;
+
+        location /echo {
+            echo_read_request_body;
+            echo_request_body;
+        }
+
+
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }
+
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;为了让大家方便搭建nginx的HTTP echo服务，我写了个build脚本，&lt;a href=&#34;https://github.com/zieckey/golangbenchmark/blob/master/httpecho/nginx/buildnginx.sh&#34;&gt;请见&lt;/a&gt;：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;#!/usr/bin/env bash
+
+WORKDIR=`pwd`
+NGINXINSTALL=$WORKDIR/nginx
+
+#get echo-nginx-module
+git clone https://github.com/openresty/echo-nginx-module
+
+#get nginx
+wget &#39;http://nginx.org/download/nginx-1.7.4.tar.gz&#39;
+tar -xzvf nginx-1.7.4.tar.gz
+cd nginx-1.7.4/
+
+# Here we assume you would install you nginx under /opt/nginx/.
+./configure --prefix=$NGINXINSTALL --add-module=$WORKDIR/echo-nginx-module
+
+make -j2
+make install
+
+cd -
+cp nginx.conf $NGINXINSTALL/conf/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下面是对比测试的相关的基础信息：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Golang 1.3.3&lt;/li&gt;
+&lt;li&gt;Nginx 1.7.4&lt;/li&gt;
+&lt;li&gt;Linux 2.6.32-220.7.1.el6.x86_64 #1 SMP Wed Mar 7 00:52:02 GMT 2012 x86_64 x86_64 x86_64 GNU/Linux&lt;/li&gt;
+&lt;li&gt;GCC version 4.4.6 20110731 (Red Hat 4.4.6-3) (GCC)&lt;/li&gt;
+&lt;li&gt;Intel&amp;reg; Xeon&amp;reg; CPU E5-2630 0 @ 2.30GHz&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&#34;https://raw.githubusercontent.com/zieckey/blog/master/image/golang-http-vs-nginx.png&#34; alt=&#34;性能测试报告&#34; /&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

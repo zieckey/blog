@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  
+  <url>
+    <loc>http://blog.codeg.cn/</loc>
+    <lastmod>2016-02-24T20:43:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/post/blog/2016-02-24-distrubute-lock-over-etcd/</loc>
+    <lastmod>2016-02-24T20:43:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/post/opinion/2016-02-20-migrate-to-hugo-from-jekyll/</loc>
+    <lastmod>2016-02-20T22:43:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2016/02/19/sharing-golang-package-to-C/</loc>
+    <lastmod>2016-02-19T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2016/02/14/send-email-for-golang/</loc>
+    <lastmod>2016-02-14T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2016/02/14/golang-remove_if/</loc>
+    <lastmod>2016-02-14T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2016/02/05/influxdb-grafana/</loc>
+    <lastmod>2016-02-05T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2016/02/02/wukong-source-code-reading/</loc>
+    <lastmod>2016-02-02T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2016/01/27/double-buffering/</loc>
+    <lastmod>2016-01-27T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/12/20/serf/</loc>
+    <lastmod>2015-12-20T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/12/15/godotenv/</loc>
+    <lastmod>2015-12-15T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/10/22/nsq/</loc>
+    <lastmod>2015-10-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/10/08/ansible/</loc>
+    <lastmod>2015-10-08T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/09/19/golang-project-source-code-reading/</loc>
+    <lastmod>2015-09-19T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/06/17/quic-source-code-reading/</loc>
+    <lastmod>2015-06-17T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/05/08/quic-protocol/</loc>
+    <lastmod>2015-05-08T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/03/18/golang-how-to-make-a-multipart-http-request/</loc>
+    <lastmod>2015-03-18T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/02/12/golang-derive-override/</loc>
+    <lastmod>2015-02-12T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/02/02/docker-intro/</loc>
+    <lastmod>2015-02-02T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/23/mime-golang-parsing/</loc>
+    <lastmod>2015-01-23T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/13/linux-system-programming/</loc>
+    <lastmod>2015-01-13T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/12/go-source-code-reading-ConstantTimeByteEq/</loc>
+    <lastmod>2015-01-12T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/07/golang-udp-client/</loc>
+    <lastmod>2015-01-07T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/06/ngx_pool_t/</loc>
+    <lastmod>2015-01-06T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/04/ngx_list_t/</loc>
+    <lastmod>2015-01-04T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/04/ngx_queue_t/</loc>
+    <lastmod>2015-01-04T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/03/ngx_array_t/</loc>
+    <lastmod>2015-01-03T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/03/ngx_hash_t/</loc>
+    <lastmod>2015-01-03T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/03/gbk2utf8-by-golang/</loc>
+    <lastmod>2015-01-03T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/02/nginx-research-readme/</loc>
+    <lastmod>2015-01-02T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2015/01/01/c11-move/</loc>
+    <lastmod>2015-01-01T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/31/compile-nginx-to-static-lib-and-1st-usage/</loc>
+    <lastmod>2014-12-31T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/30/coveralls-io-configuration-info/</loc>
+    <lastmod>2014-12-30T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/28/go-source-code-reading/</loc>
+    <lastmod>2014-12-28T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/27/gochart-info/</loc>
+    <lastmod>2014-12-27T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/15/golang1.4-resource-download/</loc>
+    <lastmod>2014-12-15T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/15/ubuntu-source-list-of-china/</loc>
+    <lastmod>2014-12-15T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/14/gc-cpp-java/</loc>
+    <lastmod>2014-12-14T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/14/jekyll-install-on-win7/</loc>
+    <lastmod>2014-12-14T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/14/Shang-Yang/</loc>
+    <lastmod>2014-12-14T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/13/golang-vs-nginx-at-httpecho/</loc>
+    <lastmod>2014-12-13T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/13/Hello-CodeG/</loc>
+    <lastmod>2014-12-13T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2014/12/13/github-pages/</loc>
+    <lastmod>2014-12-13T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/about/</loc>
+    <lastmod>2014-12-12T20:43:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://blog.codeg.cn/2013/04/12/nothing/</loc>
+    <lastmod>2013-04-12T00:00:00+00:00</lastmod>
+  </url>
+  
+</urlset>

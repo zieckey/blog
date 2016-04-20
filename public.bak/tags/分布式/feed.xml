@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>分布式 on CodeG Blog</title>
+    <link>http://blog.codeg.cn/tags/%E5%88%86%E5%B8%83%E5%BC%8F/</link>
+    <description>Recent content in 分布式 on CodeG Blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-CN</language>
+    <copyright>Copyright (c) 2015. All rights reserved.</copyright>
+    <lastBuildDate>Wed, 24 Feb 2016 20:43:00 +0000</lastBuildDate>
+    <atom:link href="http://blog.codeg.cn/tags/%E5%88%86%E5%B8%83%E5%BC%8F/feed/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>使用Golang利用ectd实现一个分布式锁</title>
+      <link>http://blog.codeg.cn/post/blog/2016-02-24-distrubute-lock-over-etcd/</link>
+      <pubDate>Wed, 24 Feb 2016 20:43:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/post/blog/2016-02-24-distrubute-lock-over-etcd/</guid>
+      <description>
+
+&lt;p&gt;&lt;code&gt;etcd&lt;/code&gt;是随着&lt;code&gt;CoreOS&lt;/code&gt;项目一起成长起来的，随着Golang和CoreOS等项目在开源社区日益火热，
+&lt;code&gt;etcd&lt;/code&gt;作为一个高可用、强一致性的分布式Key-Value存储系统被越来越多的开发人员关注和使用。&lt;/p&gt;
+
+&lt;p&gt;这篇&lt;a href=&#34;http://www.infoq.com/cn/articles/etcd-interpretation-application-scenario-implement-principle&#34;&gt;文章&lt;/a&gt;全方位介绍了etcd的应用场景，这里简单摘要如下：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;服务发现（Service Discovery）&lt;/li&gt;
+&lt;li&gt;消息发布与订阅&lt;/li&gt;
+&lt;li&gt;负载均衡&lt;/li&gt;
+&lt;li&gt;分布式通知与协调&lt;/li&gt;
+&lt;li&gt;分布式锁&lt;/li&gt;
+&lt;li&gt;分布式队列&lt;/li&gt;
+&lt;li&gt;集群监控与Leader竞选&lt;/li&gt;
+&lt;li&gt;为什么用etcd而不用ZooKeeper&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;本文重点介绍如何利用&lt;code&gt;ectd&lt;/code&gt;实现一个分布式锁。
+锁的概念大家都熟悉，当我们希望某一事件在同一时间点只有一个线程(goroutine)在做，或者某一个资源在同一时间点只有一个服务能访问，这个时候我们就需要用到锁。
+例如我们要实现一个分布式的id生成器，多台服务器之间的协调就非常麻烦。分布式锁就正好派上用场。&lt;/p&gt;
+
+&lt;p&gt;其基本实现原理为：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;在ectd系统里创建一个key&lt;/li&gt;
+&lt;li&gt;如果创建失败，key存在，则监听该key的变化事件，直到该key被删除，回到1&lt;/li&gt;
+&lt;li&gt;如果创建成功，则认为我获得了锁&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;具体代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package etcdsync
+
+import (
+	&amp;quot;fmt&amp;quot;
+	&amp;quot;io&amp;quot;
+	&amp;quot;os&amp;quot;
+	&amp;quot;sync&amp;quot;
+	&amp;quot;time&amp;quot;
+
+	&amp;quot;github.com/coreos/etcd/client&amp;quot;
+	&amp;quot;github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/context&amp;quot;
+)
+
+const (
+	defaultTTL = 60
+	defaultTry = 3
+	deleteAction = &amp;quot;delete&amp;quot;
+	expireAction = &amp;quot;expire&amp;quot;
+)
+
+// A Mutex is a mutual exclusion lock which is distributed across a cluster.
+type Mutex struct {
+	key    string
+	id     string // The identity of the caller
+	client client.Client
+	kapi   client.KeysAPI
+	ctx    context.Context
+	ttl    time.Duration
+	mutex  *sync.Mutex
+	logger io.Writer
+}
+
+// New creates a Mutex with the given key which must be the same
+// across the cluster nodes.
+// machines are the ectd cluster addresses
+func New(key string, ttl int, machines []string) *Mutex {
+	cfg := client.Config{
+		Endpoints:               machines,
+		Transport:               client.DefaultTransport,
+		HeaderTimeoutPerRequest: time.Second,
+	}
+
+	c, err := client.New(cfg)
+	if err != nil {
+		return nil
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil
+	}
+
+	if len(key) == 0 || len(machines) == 0 {
+		return nil
+	}
+
+	if key[0] != &#39;/&#39; {
+		key = &amp;quot;/&amp;quot; + key
+	}
+
+	if ttl &amp;lt; 1 {
+		ttl = defaultTTL
+	}
+
+	return &amp;amp;Mutex{
+		key:    key,
+		id:     fmt.Sprintf(&amp;quot;%v-%v-%v&amp;quot;, hostname, os.Getpid(), time.Now().Format(&amp;quot;20060102-15:04:05.999999999&amp;quot;)),
+		client: c,
+		kapi:   client.NewKeysAPI(c),
+		ctx: context.TODO(),
+		ttl: time.Second * time.Duration(ttl),
+		mutex:  new(sync.Mutex),
+	}
+}
+
+// Lock locks m.
+// If the lock is already in use, the calling goroutine
+// blocks until the mutex is available.
+func (m *Mutex) Lock() (err error) {
+	m.mutex.Lock()
+	for try := 1; try &amp;lt;= defaultTry; try++ {
+		if m.lock() == nil {
+			return nil
+		}
+		
+		m.debug(&amp;quot;Lock node %v ERROR %v&amp;quot;, m.key, err)
+		if try &amp;lt; defaultTry {
+			m.debug(&amp;quot;Try to lock node %v again&amp;quot;, m.key, err)
+		}
+	}
+	return err
+}
+
+func (m *Mutex) lock() (err error) {
+	m.debug(&amp;quot;Trying to create a node : key=%v&amp;quot;, m.key)
+	setOptions := &amp;amp;client.SetOptions{
+		PrevExist:client.PrevNoExist,
+		TTL:      m.ttl,
+	}
+	resp, err := m.kapi.Set(m.ctx, m.key, m.id, setOptions)
+	if err == nil {
+		m.debug(&amp;quot;Create node %v OK [%q]&amp;quot;, m.key, resp)
+		return nil
+	}
+	m.debug(&amp;quot;Create node %v failed [%v]&amp;quot;, m.key, err)
+	e, ok := err.(client.Error)
+	if !ok {
+		return err
+	}
+
+	if e.Code != client.ErrorCodeNodeExist {
+		return err
+	}
+
+	// Get the already node&#39;s value.
+	resp, err = m.kapi.Get(m.ctx, m.key, nil)
+	if err != nil {
+		return err
+	}
+	m.debug(&amp;quot;Get node %v OK&amp;quot;, m.key)
+	watcherOptions := &amp;amp;client.WatcherOptions{
+		AfterIndex : resp.Index,
+		Recursive:false,
+	}
+	watcher := m.kapi.Watcher(m.key, watcherOptions)
+	for {
+		m.debug(&amp;quot;Watching %v ...&amp;quot;, m.key)
+		resp, err = watcher.Next(m.ctx)
+		if err != nil {
+			return err
+		}
+
+		m.debug(&amp;quot;Received an event : %q&amp;quot;, resp)
+		if resp.Action == deleteAction || resp.Action == expireAction {
+			return nil
+		}
+	}
+
+}
+
+// Unlock unlocks m.
+// It is a run-time error if m is not locked on entry to Unlock.
+//
+// A locked Mutex is not associated with a particular goroutine.
+// It is allowed for one goroutine to lock a Mutex and then
+// arrange for another goroutine to unlock it.
+func (m *Mutex) Unlock() (err error) {
+	defer m.mutex.Unlock()
+	for i := 1; i &amp;lt;= defaultTry; i++ {
+		var resp *client.Response
+		resp, err = m.kapi.Delete(m.ctx, m.key, nil)
+		if err == nil {
+			m.debug(&amp;quot;Delete %v OK&amp;quot;, m.key)
+			return nil
+		}
+		m.debug(&amp;quot;Delete %v falied: %q&amp;quot;, m.key, resp)
+		e, ok := err.(client.Error)
+		if ok &amp;amp;&amp;amp; e.Code == client.ErrorCodeKeyNotFound {
+			return nil
+		}
+	}
+	return err
+}
+
+func (m *Mutex) debug(format string, v ...interface{}) {
+	if m.logger != nil {
+		m.logger.Write([]byte(m.id))
+		m.logger.Write([]byte(&amp;quot; &amp;quot;))
+		m.logger.Write([]byte(fmt.Sprintf(format, v...)))
+		m.logger.Write([]byte(&amp;quot;\n&amp;quot;))
+	}
+}
+
+func (m *Mutex) SetDebugLogger(w io.Writer) {
+	m.logger = w
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;其实类似的实现有很多，但目前都已经过时，使用的都是被官方标记为&lt;code&gt;deprecated&lt;/code&gt;的项目。且大部分接口都不如上述代码简单。
+使用上，跟Golang官方sync包的Mutex接口非常类似，先&lt;code&gt;New()&lt;/code&gt;，然后调用&lt;code&gt;Lock()&lt;/code&gt;，使用完后调用&lt;code&gt;Unlock()&lt;/code&gt;，就三个接口，就是这么简单。示例代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+	&amp;quot;github.com/zieckey/etcdsync&amp;quot;
+	&amp;quot;log&amp;quot;
+)
+
+func main() {
+	//etcdsync.SetDebug(true)
+	log.SetFlags(log.Ldate|log.Ltime|log.Lshortfile)
+	m := etcdsync.New(&amp;quot;/etcdsync&amp;quot;, &amp;quot;123&amp;quot;, []string{&amp;quot;http://127.0.0.1:2379&amp;quot;})
+	if m == nil {
+		log.Printf(&amp;quot;etcdsync.NewMutex failed&amp;quot;)
+	}
+	err := m.Lock()
+	if err != nil {
+		log.Printf(&amp;quot;etcdsync.Lock failed&amp;quot;)
+	} else {
+		log.Printf(&amp;quot;etcdsync.Lock OK&amp;quot;)
+	}
+
+	log.Printf(&amp;quot;Get the lock. Do something here.&amp;quot;)
+
+	err = m.Unlock()
+	if err != nil {
+		log.Printf(&amp;quot;etcdsync.Unlock failed&amp;quot;)
+	} else {
+		log.Printf(&amp;quot;etcdsync.Unlock OK&amp;quot;)
+	}
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;参考:cc4776a5974d000eb2d6ff22e22b2c04&#34;&gt;参考&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zieckey/etcdsync&#34;&gt;etcdsync项目地址&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/coreos/etcd&#34;&gt;ectd项目官方地址&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>serf介绍</title>
+      <link>http://blog.codeg.cn/2015/12/20/serf/</link>
+      <pubDate>Sun, 20 Dec 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/12/20/serf/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:0944400516c0fa656ac8b2fdb8ad1608&#34;&gt;简介&lt;/h2&gt;
+
+&lt;p&gt;Serf是一个无中心化的服务调度和服务发现工具。它容错性极好、无中心化设计、没有单点故障。Serf是建立在Gossip协议之上的，Gossip协议就是为无中心化通信而设计的。为了让一个新节点加入Serf集群，只需要知道集群中的任意一个节点即可，一旦新节点加入进来，它将获得集群中所有的成员信息。Gossip协议让Serf的配置和启动变得非常容易。&lt;/p&gt;
+
+&lt;h2 id=&#34;如何使用:0944400516c0fa656ac8b2fdb8ad1608&#34;&gt;如何使用&lt;/h2&gt;
+
+&lt;p&gt;在官方网站 &lt;a href=&#34;https://www.serfdom.io/downloads.html&#34;&gt;https://www.serfdom.io/downloads.html&lt;/a&gt; 下载合适的版本。&lt;/p&gt;
+
+&lt;h3 id=&#34;简单使用:0944400516c0fa656ac8b2fdb8ad1608&#34;&gt;简单使用&lt;/h3&gt;
+
+&lt;p&gt;新建一个事件处理器脚本，例如 handler.sh ：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;#!/bin/bash
+if [ &amp;quot;${SERF_USER_EVENT}&amp;quot; = &amp;quot;memresponse&amp;quot; ]; then
+    cat &amp;gt;&amp;gt; /tmp/mem.txt
+    echo &amp;quot;\n&amp;quot; &amp;gt;&amp;gt; /tmp/mem.txt
+fi
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;再启动 serf 服务，绑定&lt;code&gt;handler.sh&lt;/code&gt;为默认的事件处理器：
+    ./serf agent -bind=133.130.106.57:5001 -rpc-addr=133.130.106.57:7373   -log-level=debug -event-handler=./handler.sh&lt;/p&gt;
+
+&lt;p&gt;再再再另一个console窗口利用serf命令发送一个事件到之前启动的serf：
+    ./serf event -rpc-addr=133.130.106.57:7373 memresponse xcxx&lt;/p&gt;
+
+&lt;p&gt;我们可以到serf服务的窗口输出：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$  ./serf agent -bind=133.130.106.57:5001 -rpc-addr=133.130.106.57:7373   -log-level=debug -event-handler=./handler.sh
+==&amp;gt; Starting Serf agent...
+==&amp;gt; Starting Serf agent RPC...
+==&amp;gt; Serf agent running!
+         Node name: &#39;133-130-106-57&#39;
+         Bind addr: &#39;133.130.106.57:5001&#39;
+          RPC addr: &#39;133.130.106.57:7373&#39;
+         Encrypted: false
+          Snapshot: false
+           Profile: lan
+
+==&amp;gt; Log data will now stream in as it occurs:
+
+    2015/12/20 10:06:03 [INFO] agent: Serf agent starting
+    2015/12/20 10:06:03 [WARN] memberlist: Binding to public address without encryption!
+    2015/12/20 10:06:03 [INFO] serf: EventMemberJoin: 133-130-106-57 133.130.106.57
+    2015/12/20 10:06:04 [INFO] agent: Received event: member-join
+    2015/12/20 10:06:04 [DEBUG] agent: Event &#39;member-join&#39; script output: 
+    2015/12/20 10:06:13 [INFO] agent.ipc: Accepted client: 133.130.106.57:34964
+    2015/12/20 10:06:13 [DEBUG] agent: Requesting user event send: memresponse. Coalesced: true. Payload: &amp;quot;xcxx&amp;quot;
+    2015/12/20 10:06:14 [INFO] agent: Received event: user-event: memresponse
+    2015/12/20 10:06:14 [DEBUG] agent: Event &#39;user&#39; script output: 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;我们去看看 &lt;code&gt;/tmp/mem.txt&lt;/code&gt; 文件的内容如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;xcxx
+\n
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;构建serf集群:0944400516c0fa656ac8b2fdb8ad1608&#34;&gt;构建serf集群&lt;/h3&gt;
+
+&lt;h2 id=&#34;参考文献:0944400516c0fa656ac8b2fdb8ad1608&#34;&gt;参考文献&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;https://www.serfdom.io&#34;&gt;官方网站 https://www.serfdom.io&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://www.digitalocean.com/community/tutorials/how-to-set-up-a-serf-cluster-on-several-ubuntu-vps&#34;&gt;https://www.digitalocean.com/community/tutorials/how-to-set-up-a-serf-cluster-on-several-ubuntu-vps&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://iankent.uk/blog/getting-started-with-hashicorp-serf/&#34;&gt;http://iankent.uk/blog/getting-started-with-hashicorp-serf/&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>nsq介绍及源码阅读</title>
+      <link>http://blog.codeg.cn/2015/10/22/nsq/</link>
+      <pubDate>Thu, 22 Oct 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://blog.codeg.cn/2015/10/22/nsq/</guid>
+      <description>
+
+&lt;h2 id=&#34;简介:d95215f25ddc5c9409dc591338ad4840&#34;&gt;简介&lt;/h2&gt;
+
+&lt;h2 id=&#34;nsq客户端逻辑:d95215f25ddc5c9409dc591338ad4840&#34;&gt;nsq客户端逻辑&lt;/h2&gt;
+
+&lt;h3 id=&#34;nsq消费者:d95215f25ddc5c9409dc591338ad4840&#34;&gt;nsq消费者&lt;/h3&gt;
+
+&lt;p&gt;主要请参考&lt;code&gt;nsq_tail&lt;/code&gt;代码。消息处理代码为&lt;code&gt;func (c *Conn) readLoop()&lt;/code&gt;。&lt;/p&gt;
+
+&lt;p&gt;TCP消息流的二进制结构请参考官方文档：&lt;a href=&#34;http://nsq.io/clients/tcp_protocol_spec.html&#34;&gt;http://nsq.io/clients/tcp_protocol_spec.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;h3 id=&#34;nsqd内部处理逻辑:d95215f25ddc5c9409dc591338ad4840&#34;&gt;nsqd内部处理逻辑&lt;/h3&gt;
+
+&lt;h4 id=&#34;与nsqlookupd交互:d95215f25ddc5c9409dc591338ad4840&#34;&gt;与nsqlookupd交互&lt;/h4&gt;
+
+&lt;p&gt;代码调用路径如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;	nsqd.Main()
+	n.waitGroup.Wrap(func() { n.lookupLoop() })
+	func (n *NSQD) lookupLoop() : 91行： case val := &amp;lt;-n.notifyChan:
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;消息分发:d95215f25ddc5c9409dc591338ad4840&#34;&gt;消息分发&lt;/h4&gt;
+
+&lt;p&gt;&lt;code&gt;func (t *Topic) messagePump()&lt;/code&gt; 这里进行消息的分发，直接将该topic下的消息推送给所有的channel上。&lt;/p&gt;
+
+&lt;h4 id=&#34;消息id:d95215f25ddc5c9409dc591338ad4840&#34;&gt;消息ID&lt;/h4&gt;
+
+&lt;p&gt;&lt;code&gt;func (n *NSQD) idPump()&lt;/code&gt; 这里生成新的消息ID，然后放入到 &lt;code&gt;n.idChan&lt;/code&gt; 中。64位int64的guid生成算法参考&lt;a href=&#34;https://github.com/bmizerany/noeqd&#34;&gt;https://github.com/bmizerany/noeqd&lt;/a&gt;，主要部分解释如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;time - 41位 (当前毫秒数，一共69年)
+配置好的机器ID - 10 bits - 一共支持1024个机器
+顺序好 - 12 bits - 每个机器在同一毫秒内一共支持4096个
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;pub接口:d95215f25ddc5c9409dc591338ad4840&#34;&gt;pub接口&lt;/h4&gt;
+
+&lt;p&gt;发布一条消息到NSQ消息队列中。代码路径 &lt;code&gt;func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error)&lt;/code&gt; 。&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;判断消息长度是否超过限制&lt;/li&gt;
+&lt;li&gt;获取topic名称&lt;/li&gt;
+&lt;li&gt;根据topic名称，获取&lt;code&gt;Topic&lt;/code&gt;对象，最终会调用到这里：&lt;code&gt;func (n *NSQD) GetTopic(topicName string) *Topic&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;如果topic存在，直接返回&lt;code&gt;Topic&lt;/code&gt;对象&lt;/li&gt;
+&lt;li&gt;如果topic不存在，就创建一个:&lt;code&gt;func NewTopic(topicName string, ctx *context, deleteCallback func(*Topic)) *Topic&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;创建&lt;code&gt;Topic&lt;/code&gt;之后，询问&lt;code&gt;lookupd&lt;/code&gt;，获取所有关注这个topic的channel列表，然后获取或创建这些&lt;code&gt;Channel&lt;/code&gt;。&lt;/li&gt;
+&lt;li&gt;创建一个新的Message：&lt;code&gt;msg := NewMessage(&amp;lt;-s.ctx.nsqd.idChan, body)&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;将该消息放到&lt;code&gt;Topic&lt;/code&gt;上：&lt;code&gt;err = topic.PutMessage(msg)&lt;/code&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&#34;参考文献:d95215f25ddc5c9409dc591338ad4840&#34;&gt;参考文献&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://nsq.io/overview/design.html&#34;&gt;官方文档&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://wiki.jikexueyuan.com/project/nsq-guide/&#34;&gt;NSQ指南中文翻译&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

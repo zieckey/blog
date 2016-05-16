@@ -6,10 +6,12 @@ tags:
 - Golang
 - cgo
 title: Golang CGO编程之调用返回char*指针及长度的C函数库
----------------------------------------
+---
 
 现代所有主流操作系统几乎都是用C语音实现的，几乎所有高级语言都能调用C语言，例如PHP可以调用C语言写的PHP扩展，Python也可以调用C语言实现的Python扩展。
-Golang语言也不例外，Golang通过CGO机制能很方便的调用C语言。本文介绍一下如何在Go中调用稍稍复杂一点C函数，例如： `char* f(int, int*)`
+Golang语言也不例外。
+
+Golang通过CGO机制能很方便的调用C语言。本文介绍一下如何在Go中调用稍稍复杂一点C函数，例如： `char* f(int, int*)`
 
 首先看一个最简单的例子，将Golang中的一个字符串传入C函数中：
 

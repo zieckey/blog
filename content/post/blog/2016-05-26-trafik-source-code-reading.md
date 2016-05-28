@@ -23,6 +23,26 @@ to manage its configuration automatically and dynamically.
 例如 Docker、 Swarm、 Mesos/Marathon、 Kubernetes、 Consul、 Etcd、 Zookeeper、 BoltDB、 Rest API、 文件 等等，
 可以自动地动态管理和加载各种配置。
 
+特点如下：
+
+1. 快速，benchmark显示，能够达到nginx的85%的性能
+1. 没有依赖地狱，得益于Golang的特性，单个二进制文件就能运行
+1. Rest API
+1. 监视后端，能够自动监听后端配置的变化。
+1. 配置的热重加载，无需重新启动进程或服务器
+1. 优雅地关闭Http连接
+1. 后端的断路器Circuit breaker
+1. Round Robin rebalancer 负载平衡
+1. Rest测量
+1. 包括小的官方docker
+1. SSL后端支持
+1. SSL前端支持
+1. 干净的AngularJS Web UI
+1. 支持Websocket
+1. 支持Http/2
+1. 如果网络错误重试请求
+1. 自动Https支持(Let’s Encrypt)
+
 ## 用法
 
 最简单的用法当然是做一个HTTP反向代理用。

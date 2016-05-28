@@ -62,6 +62,30 @@ defaultEntryPoints = ["http"]
 
 ## 源码阅读
 
+### 源码编译
+
+按照官方文档的说明即可编译出来。其中几个需要的地方：
+
+1. 提前下载好 go-bindata 的源码并编译出二进制出来安装的 $PATH 路径下
+1. 提前下载好 glide 的源码并编译出二进制出来安装的 $PATH 路径下
+1. 如果在windows下编译的话，trafik依赖的一个 `github.com/mailgun/log` 库支持unix系统，需要做一下修改。将`NewSysLogger`函数修改如下：
+
+```go
+func NewSysLogger(conf Config) (Logger, error) {
+	debugW := os.Stdout
+	infoW := os.Stdout
+	warnW := os.Stdout
+	errorW := os.Stdout
+
+	sev, err := SeverityFromString(conf.Severity)
+	if err != nil {
+		return nil, err
+	}
+
+	return &sysLogger{sev, debugW, infoW, warnW, errorW}, nil
+}
+```
+
 ### HTTP多路分发器：mux
 
 `github.com/gorilla/mux` 是一个HTTP多路分发器，其原理也比较简单，就是实现了Golang标准库中的 `net.http.Handler` 接口，即如下：

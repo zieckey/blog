@@ -120,3 +120,13 @@ type Handler interface {
 mux.Router.ServeHTTP这个函数再进行自己的路由规则匹配和转发。
 
 Trafik使用 `github.com/gorilla/mux` 库做路由转发。
+
+## 参考
+
+1. [官方网站 https://docs.traefik.io/](https://docs.traefik.io/)
+2. [项目源码 https://github.com/containous/traefik](https://github.com/containous/traefik)
+
+
+
+
+

@@ -466,7 +466,7 @@ func main() {
 ## 参考文献
 
 1. [双缓冲技术介绍](http://baike.haosou.com/doc/302938-320692.html)
-2. [Golang实现的示例源码在这里 https://github.com/zieckey/go-doublebuffering](https://github.com/zieckey/go-doublebuffering)
+2. [Golang实现的示例源码在这里 https://github.com/zieckey/dbuf](https://github.com/zieckey/dbuf)
 
 
 

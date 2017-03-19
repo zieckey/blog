@@ -3,9 +3,8 @@ categories:
 - blog
 date: 2017-03-14T18:13:00Z
 tags:
-- Golang
-- etcd
-- 分布式
+- C++11
+- evpp
 title: evpp与muduo吞吐量对比
 ---
 

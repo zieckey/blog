@@ -316,6 +316,9 @@ Windows平台的程序包的依赖管理一直以来都是个大难题。之前�
     Installing package vcpkgdemo:x86-windows...
     Installing package vcpkgdemo:x86-windows... done
 
+如果不顺利，有错误发生的话，可以根据错误提示去 `D:/git/vcpkg/buildtrees/vcpkgdemo` 找错误日志，并解决。
+
+
 #### f) 将`D:\git\vcpkg\ports\vcpkgdemo`整个目录提交到[https://github.com/Microsoft/vcpkg](https://github.com/Microsoft/vcpkg)
 
 为了让这个vcpkg包能够被其世界上任何他人使用，我们必须将port file提交到[https://github.com/Microsoft/vcpkg](https://github.com/Microsoft/vcpkg)项目中。

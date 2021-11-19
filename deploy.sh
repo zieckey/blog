@@ -15,7 +15,7 @@ git push origin master
 
 
 # Build the project.
-hugo --theme=hugo-rapid-theme
+hugo --theme=hyde --baseUrl="http://blog.codeg.cn"
 sleep 1
 git st
 

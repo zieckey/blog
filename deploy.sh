@@ -35,3 +35,5 @@ git push origin master
 
 # Come Back
 cd ..
+git commit -a -m "Update submodule : public"
+git push origin master

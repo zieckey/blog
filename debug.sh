@@ -1,1 +1,1 @@
-hugo server -w --theme=hugo-rapid-theme
+hugo server -w --theme=hyde

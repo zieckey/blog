@@ -1,7 +1,7 @@
 ---
 categories:
 - opinion
-date: 2021-11-24T00:00:00Z
+date: 2021-11-29T00:00:00Z
 description: 
 title: 一点管理学的杂谈（2）：越级沟通和越级管理
 ---

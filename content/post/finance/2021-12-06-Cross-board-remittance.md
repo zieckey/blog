@@ -1,7 +1,10 @@
 ---
 categories:
-- study
+- finance
 date: 2021-12-06T01:00:00Z
+tags:
+- 跨境汇款
+- 资金流
 description: 简单介绍了张三给国内用户李四的汇款过程
 title: 跨境汇款的资金流过程简析（支付宝网络）
 ---

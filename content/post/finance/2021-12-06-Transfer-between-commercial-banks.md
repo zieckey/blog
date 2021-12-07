@@ -11,8 +11,7 @@ title: 两个用户通过银行转账的资金流过程简析
 
 本示例显示了客户A准备用自己的工行卡给客户B的农行卡转一笔钱的各个机构之间的信息流和资金流交互过程。有任何疑问欢迎指正。
 
-![](/images/finance/Transfer-between-commercial-banks.png)
-
+![/images/finance/Transfer-between-commercial-banks.png](/images/finance/Transfer-between-commercial-banks.png)
 
 
 * 附录：http://chartmage.com/ 源码如下

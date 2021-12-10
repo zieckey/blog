@@ -2,6 +2,8 @@
 categories:
 - opinion
 date: 2021-11-24T00:00:00Z
+tags:
+- 管理杂谈
 description: 
 title: 一点管理学的杂谈（1）：从“三个和尚没水喝”开始
 ---

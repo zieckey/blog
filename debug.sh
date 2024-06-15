@@ -1,1 +1,1 @@
-hugo server -w --theme=hyde
+hugo server -D

@@ -30,8 +30,7 @@ title: 跨境汇款的资金流过程简析（支付宝网络）
 
 直接看图
 
-
-![/images/finance/Cross-board-remittance-by-alipay.png](/images/finance/Cross-board-remittance-by-alipay.png)
+![](https://raw.githubusercontent.com/zieckey/resources/master/images/finance/Cross-board-remittance-by-alipay.png)
 
 
 这里有几个问题待讨论：

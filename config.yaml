@@ -1,7 +1,7 @@
 title: "CodeG Blog"
 languageCode: "zh-CN"
 baseurl: "http://blog.codeg.cn"
-theme: "hyde"
+theme: "cleanwhite"
 copyright: "Copyright (c) 2015. All rights reserved."
 MetaDataFormat: "yaml"
 canonifyurls: true

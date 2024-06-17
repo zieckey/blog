@@ -16,6 +16,6 @@ HIPIHI是一个值得全身心投入的公司，公司不大，但几乎都是�
 
 后面在2017年底我入职到字节跳动，在财经研发团队，参与到一些金融系统的研发和技术团队管理工作。顺便打个小广告，我们团队长期招聘各种技术牛人，欢迎投简历：
 
-   * [高级前端开发工程师](https://job.toutiao.com/s/RctcfHV)
+   * [高级前端开发工程师](https://job.toutiao.com/s/ij375bKf)
    * [高级后端工程师](https://job.toutiao.com/s/RctchtS)
 

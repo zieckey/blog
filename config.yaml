@@ -2,7 +2,6 @@ title: "CodeG Blog"
 languageCode: "zh-CN"
 baseurl: "http://blog.codeg.cn"
 theme: "hyde"
-copyright: "Copyright (c) 2015. All rights reserved."
 MetaDataFormat: "yaml"
 canonifyurls: true
 builddrafts: false
@@ -18,7 +17,6 @@ Taxonomies:
   tag: "tags"
   category: "categories"
 params:
-  CopyrightHTML: "Copyright &#xA9; 2016. All Rights Reserved."
   AuthorName: "zieckey"
   GitHubUser: "zieckey"
   SidebarRecentLimit: 10
@@ -37,8 +35,8 @@ menu:
       - Name: "归档"
         Pre: "<i class='fa fa-heart'></i>"
         Weight: -110
-        Identifier: "post"
-        URL: "/post/"
+        Identifier: "archive"
+        URL: "/categories/"
       - Name: "关于我"
         Pre: "<i class='fa fa-road'></i>"
         Identifier: "about"

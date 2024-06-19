@@ -1,6 +1,6 @@
 title: "CodeG Blog"
 languageCode: "zh-CN"
-baseurl: "http://blog.codeg.cn"
+baseurl: "https://blog.codeg.cn"
 theme: "hyde"
 MetaDataFormat: "yaml"
 canonifyurls: true
@@ -12,7 +12,8 @@ RSSUri: "feed.xml"
 disablePathToLower: true 
 hasCJKLanguage: true
 permalinks:
-  posts: /:year/:month/:day/:slug
+  page:
+    posts: /:year-:month-:day-:slug
 Taxonomies:
   tag: "tags"
   category: "categories"

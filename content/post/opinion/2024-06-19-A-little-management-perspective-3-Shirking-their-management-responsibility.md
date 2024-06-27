@@ -6,7 +6,6 @@ tags:
 - 管理杂谈
 description: 
 title: 一点管理学的杂谈（3）：逃避自己的管理责任
-draft: true
 ---
 
 
